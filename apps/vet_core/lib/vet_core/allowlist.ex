@@ -54,7 +54,11 @@ defmodule VetCore.Allowlist do
     {:typed_struct, :file_access, "Reads VERSION file"},
     {:typed_struct, :system_exec, "Git commands in mix.exs"},
     {:websock, :file_access, "Reads VERSION/CHANGELOG"},
-    {:erlex, :file_access, "Reads VERSION file"}
+    {:erlex, :file_access, "Reads VERSION file"},
+
+    # Atom exhaustion — legitimate atom conversion
+    {:phoenix, :dos_atom_exhaustion, "Phoenix legitimately converts atoms for routing"},
+    {:ecto, :dos_atom_exhaustion, "Ecto legitimately converts atoms for schema fields"}
   ]
 
   @spec suppressed?(atom(), Finding.category()) :: boolean()
