@@ -1,39 +1,50 @@
 defmodule VetMcp.Tools.CheckPackage do
   @moduledoc false
+  @behaviour VetMcp.Tool
 
-  def name, do: "check_package"
+  @impl true
+  def name, do: "vet_check_package"
 
+  @impl true
   def description do
-    "Check a specific Hex package for security issues before adding it as a dependency. " <>
-      "Fetches metadata from hex.pm and checks for typosquatting, low downloads, and suspicious signals."
+    "Check a specific Hex package for security concerns before adding it as a dependency. " <>
+      "Useful when an AI assistant is about to suggest adding a dependency."
   end
 
-  def parameters do
+  @impl true
+  def schema do
     %{
       type: "object",
-      required: ["package_name"],
+      required: ["package"],
       properties: %{
-        package_name: %{
+        package: %{
           type: "string",
-          description: "Name of the Hex package to check."
+          description: "Package name on hex.pm"
+        },
+        version: %{
+          type: "string",
+          description: "Specific version to check (optional, defaults to latest)"
         }
       }
     }
   end
 
-  def run(%{"package_name" => name}) do
+  @impl true
+  def execute(%{"package" => name} = params, _context) do
     metadata = VetCore.Metadata.HexChecker.fetch_metadata(String.to_atom(name))
+    version = Map.get(params, "version", metadata.latest_version)
 
     dep = %VetCore.Types.Dependency{
       name: String.to_atom(name),
       source: :hex,
-      version: metadata.latest_version
+      version: version
     }
 
     typosquat_findings = VetCore.Metadata.TyposquatDetector.check_dep(dep)
 
     result = %{
       package: name,
+      version: version,
       metadata: %{
         downloads: metadata.downloads,
         latest_version: metadata.latest_version,
@@ -49,6 +60,10 @@ defmodule VetMcp.Tools.CheckPackage do
     }
 
     {:ok, Jason.encode!(result, pretty: true)}
+  end
+
+  def execute(_params, _context) do
+    {:error, "Missing required parameter: package"}
   end
 
   defp assess(metadata, typosquat_findings) do

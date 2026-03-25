@@ -51,6 +51,7 @@ defmodule VetCore.Types do
             | :env_access
             | :obfuscation
             | :shady_links
+            | :compiler_hooks
 
     @type t :: %__MODULE__{
             dep_name: atom(),

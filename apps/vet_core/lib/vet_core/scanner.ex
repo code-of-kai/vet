@@ -10,7 +10,8 @@ defmodule VetCore.Scanner do
     VetCore.Checks.FileAccess,
     VetCore.Checks.EnvAccess,
     VetCore.Checks.Obfuscation,
-    VetCore.Checks.ShadyLinks
+    VetCore.Checks.ShadyLinks,
+    VetCore.Checks.CompilerHooks
   ]
 
   @spec scan(String.t(), keyword()) :: {:ok, ScanReport.t()} | {:error, term()}

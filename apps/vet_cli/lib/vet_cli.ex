@@ -10,7 +10,8 @@ defmodule VetCli do
           threshold: :integer,
           skip_hex: :boolean,
           verbose: :boolean,
-          help: :boolean
+          help: :boolean,
+          ai: :boolean
         ],
         aliases: [
           p: :path,
@@ -32,6 +33,11 @@ defmodule VetCli do
       case VetCore.scan(path, scan_opts) do
         {:ok, report} ->
           VetReporter.report(report, format)
+
+          if opts[:ai] do
+            run_ai_review(report, threshold)
+          end
+
           exit_with_threshold(report, threshold)
 
         {:error, reason} ->
@@ -58,6 +64,32 @@ defmodule VetCli do
     end
   end
 
+  defp run_ai_review(report, threshold) do
+    IO.puts("")
+    IO.puts(IO.ANSI.bright() <> "Running AI deep review on flagged dependencies..." <> IO.ANSI.reset())
+
+    case VetCore.LLMReview.review_flagged(report, threshold: threshold) do
+      {:ok, results} ->
+        Enum.each(results, fn
+          {dep_name, {:ok, result}} ->
+            IO.puts("")
+            IO.puts(IO.ANSI.bright() <> "AI Review: #{dep_name}" <> IO.ANSI.reset())
+            IO.puts(String.duplicate("-", 40))
+            IO.puts(result.ai_analysis)
+            IO.puts("")
+
+          {dep_name, {:error, :missing_api_key}} ->
+            IO.puts(IO.ANSI.yellow() <> "Skipped AI review for #{dep_name}: set ANTHROPIC_API_KEY" <> IO.ANSI.reset())
+
+          {dep_name, {:error, reason}} ->
+            IO.puts(IO.ANSI.yellow() <> "AI review failed for #{dep_name}: #{inspect(reason)}" <> IO.ANSI.reset())
+        end)
+
+      {:error, reason} ->
+        IO.puts(IO.ANSI.yellow() <> "AI review failed: #{inspect(reason)}" <> IO.ANSI.reset())
+    end
+  end
+
   defp print_help do
     IO.puts("""
     vet — Elixir dependency security scanner
@@ -72,6 +104,7 @@ defmodule VetCli do
       -t, --threshold N       Exit with code 1 if any dep scores >= N (default: 50)
       --skip-hex              Skip hex.pm metadata checks
       -v, --verbose           Show full AST context for findings
+      --ai                    Run AI deep review on flagged dependencies
       -h, --help              Show this help
     """)
   end

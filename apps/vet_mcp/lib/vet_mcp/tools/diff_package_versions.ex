@@ -1,42 +1,75 @@
 defmodule VetMcp.Tools.DiffPackageVersions do
   @moduledoc false
+  @behaviour VetMcp.Tool
 
-  def name, do: "diff_package_versions"
+  @impl true
+  def name, do: "vet_diff_versions"
 
+  @impl true
   def description do
-    "Compare two versions of a Hex package for suspicious changes. " <>
-      "Shows new findings, resolved findings, and pattern profile shifts between versions."
+    "Compare two versions of a package to detect suspicious changes, " <>
+      "new security findings, or pattern profile shifts."
   end
 
-  def parameters do
+  @impl true
+  def schema do
     %{
       type: "object",
-      required: ["package_name", "old_version", "new_version"],
+      required: ["package", "from_version", "to_version"],
       properties: %{
-        package_name: %{
+        package: %{
           type: "string",
-          description: "Name of the Hex package."
+          description: "Package name on hex.pm"
         },
-        old_version: %{
+        from_version: %{
           type: "string",
-          description: "Previous version to compare from."
+          description: "Previous version to compare from"
         },
-        new_version: %{
+        to_version: %{
           type: "string",
-          description: "New version to compare to."
+          description: "New version to compare to"
         }
       }
     }
   end
 
-  def run(%{"package_name" => name, "old_version" => old_ver, "new_version" => new_ver}) do
-    result = %{
-      package: name,
-      old_version: old_ver,
-      new_version: new_ver,
-      status: "Version diffing requires the Vet Service. Use `mix hex.package diff #{name} #{old_ver} #{new_ver}` for now."
-    }
+  @impl true
+  def execute(
+        %{"package" => name, "from_version" => from_ver, "to_version" => to_ver},
+        _context
+      ) do
+    package_atom = String.to_atom(name)
 
-    {:ok, Jason.encode!(result, pretty: true)}
+    case VetCore.VersionDiff.diff(File.cwd!(), package_atom, from_ver, to_ver) do
+      {:ok, diff} ->
+        {suspicious?, signals} = VetCore.VersionDiff.suspicious_delta?(diff)
+
+        result = %{
+          package: name,
+          from_version: from_ver,
+          to_version: to_ver,
+          new_files: diff.new_files,
+          removed_files: diff.removed_files,
+          modified_files: diff.modified_files,
+          new_findings: length(diff.new_findings),
+          resolved_findings: length(diff.resolved_findings),
+          profile_shift: diff.profile_shift,
+          suspicious: suspicious?,
+          signals: Enum.map(signals, &to_string/1)
+        }
+
+        {:ok, Jason.encode!(result, pretty: true)}
+
+      {:error, :version_unavailable} ->
+        {:error, "One or both versions of #{name} could not be fetched. " <>
+          "Ensure the package and versions exist on hex.pm."}
+
+      {:error, reason} ->
+        {:error, "Version diff failed: #{inspect(reason)}"}
+    end
+  end
+
+  def execute(_params, _context) do
+    {:error, "Missing required parameters: package, from_version, to_version"}
   end
 end
