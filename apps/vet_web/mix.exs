@@ -36,7 +36,8 @@ defmodule VetWeb.MixProject do
       {:jason, "~> 1.4"},
       {:plug_cowboy, "~> 2.7"},
       {:telemetry_metrics, "~> 1.0"},
-      {:telemetry_poller, "~> 1.1"}
+      {:telemetry_poller, "~> 1.1"},
+      {:tidewave, "~> 0.5", only: :dev}
     ]
   end
 end
