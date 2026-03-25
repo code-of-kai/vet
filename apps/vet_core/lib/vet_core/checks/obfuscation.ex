@@ -2,6 +2,7 @@ defmodule VetCore.Checks.Obfuscation do
   @moduledoc false
   @behaviour VetCore.Check
 
+  alias VetCore.AST.Walker
   alias VetCore.Checks.FileHelper
   alias VetCore.Types.Finding
 
@@ -20,16 +21,27 @@ defmodule VetCore.Checks.Obfuscation do
     |> FileHelper.read_and_parse(project_path)
     |> Enum.flat_map(fn {file_path, source, ast} ->
       findings_decode_eval = scan_decode_eval(ast, dep_name, file_path, source)
-      findings_entropy = scan_high_entropy(ast, dep_name, file_path, source)
-      findings_dynamic_apply = scan_dynamic_apply(ast, dep_name, file_path, source)
-      findings_decode_eval ++ findings_entropy ++ findings_dynamic_apply
+
+      findings_entropy_and_apply =
+        Walker.walk(
+          ast,
+          [
+            &match_high_entropy(&1, &2, dep_name, source),
+            &match_dynamic_apply(&1, &2, dep_name, source)
+          ],
+          file_path,
+          dep_name
+        )
+
+      findings_decode_eval ++ findings_entropy_and_apply
     end)
   end
 
   # ---------- Pattern 1: Base.decode64 near Code.eval_string ----------
+  # This pattern checks co-occurrence within a scope, so it uses its own
+  # AST traversal with resolve_call for the inner has_call? checks.
 
   defp scan_decode_eval(ast, dep_name, file_path, source) do
-    # Walk top-level defs/module body and check if both decode64 and eval_string appear
     find_decode_eval_pairs(ast)
     |> Enum.map(fn {line, column} ->
       %Finding{
@@ -50,7 +62,6 @@ defmodule VetCore.Checks.Obfuscation do
   end
 
   defp find_decode_eval_pairs(ast) do
-    # Collect all def/defp/defmacro/module bodies, check each for both patterns
     bodies = extract_bodies(ast)
 
     Enum.flat_map(bodies, fn {body_ast, line, column} ->
@@ -96,42 +107,95 @@ defmodule VetCore.Checks.Obfuscation do
   end
 
   # ---------- Pattern 2: High-entropy string literals ----------
+  # Operates on raw string literal nodes, not remote calls — stays as direct AST matching.
 
-  defp scan_high_entropy(ast, dep_name, file_path, source) do
-    FileHelper.walk_ast(ast, fn node, ctx ->
-      case node do
-        str when is_binary(str) and byte_size(str) > @min_string_length ->
-          entropy = shannon_entropy(str)
+  defp match_high_entropy(node, state, dep_name, source) do
+    case node do
+      str when is_binary(str) and byte_size(str) > @min_string_length ->
+        entropy = shannon_entropy(str)
 
-          if entropy > @entropy_threshold and not natural_language?(str) and not base64_data_uri?(str) do
-            # Best-effort line: we don't get metadata on raw string literals,
-            # so try to find it in the source.
-            line = find_string_line(source, str)
-            is_ct = FileHelper.compile_time?(ctx)
+        if entropy > @entropy_threshold and not natural_language?(str) and
+             not base64_data_uri?(str) do
+          line = find_string_line(source, str)
+          is_ct = FileHelper.compile_time?(state.context_stack)
 
-            [%Finding{
-              dep_name: dep_name,
-              file_path: file_path,
-              line: line,
-              column: nil,
-              check_id: :obfuscation_entropy,
-              category: @category,
-              severity: :critical,
-              compile_time?: is_ct,
-              snippet: FileHelper.snippet(source, line),
-              description:
-                "High-entropy string literal (Shannon entropy: #{Float.round(entropy, 2)}) — " <>
-                  "possible obfuscated payload"
-            }]
-          else
-            []
-          end
+          %Finding{
+            dep_name: dep_name,
+            file_path: state.file_path,
+            line: line,
+            column: nil,
+            check_id: :obfuscation_entropy,
+            category: @category,
+            severity: :critical,
+            compile_time?: is_ct,
+            snippet: FileHelper.snippet(source, line),
+            description:
+              "High-entropy string literal (Shannon entropy: #{Float.round(entropy, 2)}) — " <>
+                "possible obfuscated payload"
+          }
+        else
+          nil
+        end
 
-        _ ->
-          []
-      end
-    end)
+      _ ->
+        nil
+    end
   end
+
+  # ---------- Pattern 3: Dynamic apply/3 ----------
+  # Uses resolve_call for Kernel.apply, and direct AST matching for bare apply/3.
+
+  defp match_dynamic_apply(node, state, dep_name, source) do
+    case match_apply_pattern(node, state) do
+      nil ->
+        nil
+
+      {description, line, column} ->
+        is_ct = FileHelper.compile_time?(state.context_stack)
+
+        %Finding{
+          dep_name: dep_name,
+          file_path: state.file_path,
+          line: line,
+          column: column,
+          check_id: :obfuscation_dynamic_apply,
+          category: @category,
+          severity: @base_severity,
+          compile_time?: is_ct,
+          snippet: FileHelper.snippet(source, line),
+          description: description
+        }
+    end
+  end
+
+  # Bare apply/3 with non-literal module or function
+  defp match_apply_pattern({:apply, meta, [mod, func, _args]}, _state)
+       when not is_atom(mod) or not is_atom(func) do
+    case {mod, func} do
+      {m, f} when is_atom(m) and is_atom(f) ->
+        nil
+
+      _ ->
+        {"Dynamic apply/3 call with non-literal module or function — " <>
+           "may be used to obscure the actual function being called",
+         meta[:line] || 0, meta[:column]}
+    end
+  end
+
+  # Kernel.apply/3 via resolve_call
+  defp match_apply_pattern(node, state) do
+    with {_type, [:Kernel], :apply, [mod, func, _args], meta} <-
+           Walker.resolve_call(node, state),
+         false <- is_atom(mod) and is_atom(func) do
+      {"Dynamic Kernel.apply/3 call with non-literal module or function — " <>
+         "may be used to obscure the actual function being called",
+       meta[:line] || 0, meta[:column]}
+    else
+      _ -> nil
+    end
+  end
+
+  # ---------- Helpers ----------
 
   defp shannon_entropy(string) do
     bytes = :binary.bin_to_list(string)
@@ -151,13 +215,11 @@ defmodule VetCore.Checks.Obfuscation do
   end
 
   defp natural_language?(str) do
-    # Strings with many spaces and common English patterns are likely docs/comments
     space_ratio = (str |> String.graphemes() |> Enum.count(&(&1 == " "))) / String.length(str)
     space_ratio > 0.10
   end
 
   defp find_string_line(source, str) do
-    # Take first 40 chars of the string to search for in source
     needle = String.slice(str, 0, 40)
 
     source
@@ -167,56 +229,4 @@ defmodule VetCore.Checks.Obfuscation do
       if String.contains?(line_text, needle), do: idx
     end)
   end
-
-  # ---------- Pattern 3: Dynamic apply/3 ----------
-
-  defp scan_dynamic_apply(ast, dep_name, file_path, source) do
-    FileHelper.walk_ast(ast, fn node, ctx ->
-      case match_dynamic_apply(node) do
-        nil -> []
-        {description, line, column} ->
-          is_ct = FileHelper.compile_time?(ctx)
-
-          [%Finding{
-            dep_name: dep_name,
-            file_path: file_path,
-            line: line,
-            column: column,
-            check_id: :obfuscation_dynamic_apply,
-            category: @category,
-            severity: @base_severity,
-            compile_time?: is_ct,
-            snippet: FileHelper.snippet(source, line),
-            description: description
-          }]
-      end
-    end)
-  end
-
-  # apply(mod, func, args) where mod or func is not a literal atom
-  defp match_dynamic_apply({:apply, meta, [mod, func, _args]})
-       when not is_atom(mod) or not is_atom(func) do
-    # Exclude cases where both are atoms (known safe calls)
-    case {mod, func} do
-      {m, f} when is_atom(m) and is_atom(f) ->
-        nil
-
-      _ ->
-        {"Dynamic apply/3 call with non-literal module or function — " <>
-           "may be used to obscure the actual function being called",
-         meta[:line] || 0, meta[:column]}
-    end
-  end
-
-  # Kernel.apply/3 via dot syntax
-  defp match_dynamic_apply(
-         {{:., _, [{:__aliases__, _, [:Kernel]}, :apply]}, meta, [mod, func, _args]}
-       )
-       when not (is_atom(mod) and is_atom(func)) do
-    {"Dynamic Kernel.apply/3 call with non-literal module or function — " <>
-       "may be used to obscure the actual function being called",
-     meta[:line] || 0, meta[:column]}
-  end
-
-  defp match_dynamic_apply(_), do: nil
 end

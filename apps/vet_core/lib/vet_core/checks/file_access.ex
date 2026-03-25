@@ -2,6 +2,7 @@ defmodule VetCore.Checks.FileAccess do
   @moduledoc false
   @behaviour VetCore.Check
 
+  alias VetCore.AST.Walker
   alias VetCore.Checks.FileHelper
   alias VetCore.Types.Finding
 
@@ -20,53 +21,48 @@ defmodule VetCore.Checks.FileAccess do
     dep_name
     |> FileHelper.read_and_parse(project_path)
     |> Enum.flat_map(fn {file_path, source, ast} ->
-      scan_ast(ast, dep_name, file_path, source)
+      Walker.walk(ast, [&matcher(&1, &2, dep_name, source)], file_path, dep_name)
     end)
   end
 
-  defp scan_ast(ast, dep_name, file_path, source) do
-    FileHelper.walk_ast(ast, fn node, ctx ->
-      case match_pattern(node) do
-        nil -> []
-        {description, line, column, sensitive?} ->
-          is_ct = FileHelper.compile_time?(ctx)
-          severity = cond do
-            sensitive? -> :critical
-            is_ct -> :critical
-            true -> @base_severity
-          end
+  defp matcher(node, state, dep_name, source) do
+    with {_type, [:File] = _module, func, args, meta} <- Walker.resolve_call(node, state),
+         true <- func in @file_functions do
+      sensitive? = args_contain_sensitive_path?(args)
+      is_ct = FileHelper.compile_time?(state.context_stack)
 
-          [%Finding{
-            dep_name: dep_name,
-            file_path: file_path,
-            line: line,
-            column: column,
-            check_id: :file_access,
-            category: @category,
-            severity: severity,
-            compile_time?: is_ct,
-            snippet: FileHelper.snippet(source, line),
-            description: description
-          }]
-      end
-    end)
+      severity =
+        cond do
+          sensitive? -> :critical
+          is_ct -> :critical
+          true -> @base_severity
+        end
+
+      line = meta[:line] || 0
+
+      desc =
+        if sensitive? do
+          "Call to File.#{func} accessing a sensitive path — potential credential exfiltration"
+        else
+          "Call to File.#{func} — filesystem access"
+        end
+
+      %Finding{
+        dep_name: dep_name,
+        file_path: state.file_path,
+        line: line,
+        column: meta[:column],
+        check_id: :file_access,
+        category: @category,
+        severity: severity,
+        compile_time?: is_ct,
+        snippet: FileHelper.snippet(source, line),
+        description: desc
+      }
+    else
+      _ -> nil
+    end
   end
-
-  defp match_pattern({{:., _, [{:__aliases__, _, [:File]}, func]}, meta, args})
-       when func in @file_functions do
-    sensitive? = args_contain_sensitive_path?(args)
-
-    desc =
-      if sensitive? do
-        "Call to File.#{func} accessing a sensitive path — potential credential exfiltration"
-      else
-        "Call to File.#{func} — filesystem access"
-      end
-
-    {desc, meta[:line] || 0, meta[:column], sensitive?}
-  end
-
-  defp match_pattern(_), do: nil
 
   defp args_contain_sensitive_path?(args) do
     Enum.any?(args, fn

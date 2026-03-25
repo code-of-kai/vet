@@ -2,11 +2,28 @@ defmodule VetCore.Checks.AtomExhaustion do
   @moduledoc false
   @behaviour VetCore.Check
 
+  alias VetCore.AST.Walker
   alias VetCore.Checks.FileHelper
   alias VetCore.Types.Finding
 
   @category :dos_atom_exhaustion
   @base_severity :warning
+
+  @patterns [
+    {[:String], :to_atom},
+    {[:List], :to_atom},
+    {[:erlang], :binary_to_atom},
+    {[:erlang], :list_to_atom}
+  ]
+
+  @descriptions %{
+    {[:String], :to_atom} => "Call to String.to_atom — DoS via atom table exhaustion",
+    {[:List], :to_atom} => "Call to List.to_atom — DoS via atom table exhaustion",
+    {[:erlang], :binary_to_atom} =>
+      "Call to :erlang.binary_to_atom — DoS via atom table exhaustion",
+    {[:erlang], :list_to_atom} =>
+      "Call to :erlang.list_to_atom — DoS via atom table exhaustion"
+  }
 
   @impl true
   def init(opts), do: opts
@@ -16,57 +33,41 @@ defmodule VetCore.Checks.AtomExhaustion do
     dep_name
     |> FileHelper.read_and_parse(project_path)
     |> Enum.flat_map(fn {file_path, source, ast} ->
-      scan_ast(ast, dep_name, file_path, source)
+      Walker.walk(ast, [&matcher(&1, &2, dep_name, source)], file_path, dep_name)
     end)
   end
 
-  defp scan_ast(ast, dep_name, file_path, source) do
-    FileHelper.walk_ast(ast, fn node, ctx ->
-      case match_pattern(node) do
-        nil -> []
-        {description, line, column} ->
-          is_ct = FileHelper.compile_time?(ctx)
-          severity = if is_ct, do: :critical, else: @base_severity
+  defp matcher(node, state, dep_name, source) do
+    with {_type, module, func, _args, meta} <- Walker.resolve_call(node, state),
+         true <- matches_pattern?(module, func) do
+      is_ct = FileHelper.compile_time?(state.context_stack)
+      severity = if is_ct, do: :critical, else: @base_severity
+      line = meta[:line] || 0
 
-          [%Finding{
-            dep_name: dep_name,
-            file_path: file_path,
-            line: line,
-            column: column,
-            check_id: :atom_exhaustion,
-            category: @category,
-            severity: severity,
-            compile_time?: is_ct,
-            snippet: FileHelper.snippet(source, line),
-            description: description
-          }]
-      end
-    end)
+      description =
+        Map.get(@descriptions, {module, func}, "Call to #{format_call(module, func)}")
+
+      %Finding{
+        dep_name: dep_name,
+        file_path: state.file_path,
+        line: line,
+        column: meta[:column],
+        check_id: :atom_exhaustion,
+        category: @category,
+        severity: severity,
+        compile_time?: is_ct,
+        snippet: FileHelper.snippet(source, line),
+        description: description
+      }
+    else
+      _ -> nil
+    end
   end
 
-  # String.to_atom/1
-  defp match_pattern({{:., _, [{:__aliases__, _, [:String]}, :to_atom]}, meta, _args}) do
-    {"Call to String.to_atom — DoS via atom table exhaustion",
-     meta[:line] || 0, meta[:column]}
+  defp matches_pattern?(module, func) do
+    Enum.any?(@patterns, fn {m, f} -> m == module and f == func end)
   end
 
-  # List.to_atom/1
-  defp match_pattern({{:., _, [{:__aliases__, _, [:List]}, :to_atom]}, meta, _args}) do
-    {"Call to List.to_atom — DoS via atom table exhaustion",
-     meta[:line] || 0, meta[:column]}
-  end
-
-  # :erlang.binary_to_atom/1,2
-  defp match_pattern({{:., _, [:erlang, :binary_to_atom]}, meta, _args}) do
-    {"Call to :erlang.binary_to_atom — DoS via atom table exhaustion",
-     meta[:line] || 0, meta[:column]}
-  end
-
-  # :erlang.list_to_atom/1
-  defp match_pattern({{:., _, [:erlang, :list_to_atom]}, meta, _args}) do
-    {"Call to :erlang.list_to_atom — DoS via atom table exhaustion",
-     meta[:line] || 0, meta[:column]}
-  end
-
-  defp match_pattern(_), do: nil
+  defp format_call([mod], func), do: "#{mod}.#{func}"
+  defp format_call(mods, func), do: "#{Enum.join(mods, ".")}.#{func}"
 end

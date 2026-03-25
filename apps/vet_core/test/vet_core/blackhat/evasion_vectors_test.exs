@@ -118,7 +118,6 @@ defmodule VetCore.Blackhat.EvasionVectorsTest do
   # ---------------------------------------------------------------------------
 
   describe "dynamic dispatch via variable" do
-    @tag :known_gap
     setup do
       source = ~S"""
       defmodule Evasion.DynamicDispatch do
@@ -134,15 +133,15 @@ defmodule VetCore.Blackhat.EvasionVectorsTest do
       %{project_path: tmp_dir, dep: dep}
     end
 
-    @tag :known_gap
-    test "KNOWN GAP: variable module reference evades SystemExec",
+    test "detects System.cmd through variable-bound module",
          %{project_path: path, dep: dep} do
-      # mod.cmd("whoami", []) parses as a dot-call on the variable `mod`, not on
-      # {:__aliases__, _, [:System]}. Without data-flow analysis, we cannot resolve
-      # the variable to its literal value.
+      # Walker now tracks variable bindings: `mod = System` records that `mod`
+      # resolves to [:System]. When `mod.cmd(...)` is encountered, resolve_call
+      # looks up the binding and returns {:remote, [:System], :cmd, ...}.
       findings = SystemExec.run(dep, path, [])
       exec_findings = Enum.filter(findings, &(&1.check_id == :system_exec))
-      assert exec_findings == []
+      assert length(exec_findings) >= 1
+      assert Enum.any?(exec_findings, &(&1.category == :system_exec))
     end
   end
 
@@ -151,7 +150,6 @@ defmodule VetCore.Blackhat.EvasionVectorsTest do
   # ---------------------------------------------------------------------------
 
   describe "import-then-bare-call" do
-    @tag :known_gap
     setup do
       source = ~S"""
       defmodule Evasion.ImportBareCall do
@@ -167,15 +165,15 @@ defmodule VetCore.Blackhat.EvasionVectorsTest do
       %{project_path: tmp_dir, dep: dep}
     end
 
-    @tag :known_gap
-    test "KNOWN GAP: imported bare cmd() call evades SystemExec",
+    test "detects bare cmd() call after import System",
          %{project_path: path, dep: dep} do
-      # After `import System`, the call `cmd("whoami", [])` has no module prefix
-      # in the AST — it appears as {:cmd, meta, args} rather than a dot-call on
-      # System. Would require import tracking to detect.
+      # Walker now tracks imports: `import System` records [:System] in the
+      # imports list. When `cmd("whoami", [])` is encountered, resolve_call
+      # checks imports and returns {:imported, [:System], :cmd, ...}.
       findings = SystemExec.run(dep, path, [])
       exec_findings = Enum.filter(findings, &(&1.check_id == :system_exec))
-      assert exec_findings == []
+      assert length(exec_findings) >= 1
+      assert Enum.any?(exec_findings, &(&1.category == :system_exec))
     end
   end
 
@@ -316,7 +314,6 @@ defmodule VetCore.Blackhat.EvasionVectorsTest do
   # ---------------------------------------------------------------------------
 
   describe "alias obfuscation" do
-    @tag :known_gap
     setup do
       source = ~S"""
       defmodule Evasion.AliasObfuscation do
@@ -333,15 +330,15 @@ defmodule VetCore.Blackhat.EvasionVectorsTest do
       %{project_path: tmp_dir, dep: dep}
     end
 
-    @tag :known_gap
-    test "KNOWN GAP: aliased module C evades CodeEval",
+    test "detects Code.eval_string through alias obfuscation",
          %{project_path: path, dep: dep} do
-      # `alias Code, as: C` causes `C.eval_string(...)` to parse with
-      # {:__aliases__, _, [:C]} instead of [:Code]. Without alias resolution,
-      # CodeEval's pattern match on [:Code] never fires.
+      # Walker now tracks aliases: `alias Code, as: C` records C => [:Code].
+      # When `C.eval_string(...)` is encountered, resolve_call expands C to
+      # [:Code] and returns {:remote, [:Code], :eval_string, ...}.
       findings = CodeEval.run(dep, path, [])
       eval_findings = Enum.filter(findings, &(&1.check_id == :code_eval))
-      assert eval_findings == []
+      assert length(eval_findings) >= 1
+      assert Enum.any?(eval_findings, &(&1.category == :code_eval))
     end
   end
 
