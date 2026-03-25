@@ -1,5 +1,5 @@
 defmodule VetServiceTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias VetService.Events.{
     PackageVersionPublished,
@@ -269,6 +269,28 @@ defmodule VetServiceTest do
       }
 
       assert {:error, :already_suppressed} = PackageVersion.execute(aggregate, command)
+    end
+  end
+
+  # --- Public API (backed by ETS Store) ---
+
+  describe "VetService public API" do
+    test "record and retrieve scan" do
+      VetService.record_scan("test_pkg", "1.0.0", %{risk_score: 42})
+      assert {:ok, %{risk_score: 42}} = VetService.get_scan("test_pkg", "1.0.0")
+    end
+
+    test "submit attestation and get consensus" do
+      VetService.submit_attestation("test_pkg2", "1.0.0", %{findings_hash: "abc"})
+      VetService.submit_attestation("test_pkg2", "1.0.0", %{findings_hash: "abc"})
+      consensus = VetService.get_consensus("test_pkg2", "1.0.0")
+      assert is_map(consensus)
+    end
+
+    test "list_scans returns recorded scans" do
+      VetService.record_scan("list_test", "1.0.0", %{risk_score: 10})
+      scans = VetService.list_scans()
+      assert Enum.any?(scans, fn s -> s.key == {"list_test", "1.0.0"} end)
     end
   end
 end

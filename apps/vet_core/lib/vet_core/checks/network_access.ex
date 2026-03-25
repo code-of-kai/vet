@@ -1,6 +1,6 @@
 defmodule VetCore.Checks.NetworkAccess do
   @moduledoc false
-  @behaviour VetCore.Check
+  use VetCore.Check
 
   alias VetCore.AST.Walker
   alias VetCore.Checks.FileHelper
@@ -29,9 +29,6 @@ defmodule VetCore.Checks.NetworkAccess do
     {[:gen_tcp], :connect} => "Call to :gen_tcp.connect — opens a raw TCP connection",
     {[:ssl], :connect} => "Call to :ssl.connect — opens an SSL/TLS connection"
   }
-
-  @impl true
-  def init(opts), do: opts
 
   @impl true
   def run(%{name: dep_name} = _dependency, project_path, _state) do

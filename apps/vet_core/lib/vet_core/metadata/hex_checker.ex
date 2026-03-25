@@ -1,89 +1,78 @@
 defmodule VetCore.Metadata.HexChecker do
   @moduledoc false
 
-  alias VetCore.Types.HexMetadata
+  require Logger
 
-  @hex_api_url ~c"https://hex.pm/api/packages/"
+  alias VetCore.Types.HexMetadata
 
   def check(deps) when is_list(deps) do
     deps
     |> Enum.filter(&(&1.source == :hex))
     |> Enum.map(fn dep ->
-      metadata = VetCore.Metadata.RateLimiter.throttle(fn -> fetch_metadata(dep.name) end)
-      {dep.name, metadata}
+      case VetCore.Metadata.RateLimiter.throttle(fn -> fetch_metadata(dep.name) end) do
+        {:ok, metadata} -> {dep.name, metadata}
+        {:error, _reason} -> {dep.name, nil}
+      end
     end)
     |> Map.new()
   end
 
   def fetch_metadata(package_name) do
-    url = @hex_api_url ++ to_charlist(package_name)
+    case Req.get("https://hex.pm/api/packages/#{package_name}") do
+      {:ok, %{status: 200, body: body}} ->
+        # body is already decoded JSON (Req auto-decodes)
+        {:ok, parse_hex_response(body)}
 
-    case :httpc.request(:get, {url, [{~c"user-agent", ~c"vet/0.1.0"}]}, [{:ssl, ssl_opts()}], []) do
-      {:ok, {{_, 200, _}, _headers, body}} ->
-        parse_response(body)
+      {:ok, %{status: 404}} ->
+        {:error, "Package #{package_name} not found on hex.pm"}
 
-      {:ok, {{_, 404, _}, _, _}} ->
-        %HexMetadata{}
+      {:ok, %{status: status}} ->
+        Logger.warning("Hex API returned #{status} for #{package_name}")
+        {:error, "Hex API returned #{status} for #{package_name}"}
 
-      {:error, _reason} ->
-        %HexMetadata{}
+      {:error, reason} ->
+        Logger.warning("Hex API request failed for #{package_name}: #{inspect(reason)}")
+        {:error, "Hex API request failed: #{inspect(reason)}"}
     end
   end
 
-  defp parse_response(body) do
-    case Jason.decode(to_string(body)) do
-      {:ok, data} ->
-        downloads = get_in(data, ["downloads", "all"]) || 0
+  defp parse_hex_response(data) do
+    downloads = get_in(data, ["downloads", "all"]) || 0
 
-        latest_release =
-          data
-          |> Map.get("releases", [])
-          |> List.first()
+    latest_release =
+      data
+      |> Map.get("releases", [])
+      |> List.first()
 
-        latest_version = latest_release && Map.get(latest_release, "version")
+    latest_version = latest_release && Map.get(latest_release, "version")
 
-        latest_release_date =
-          with %{"inserted_at" => date_str} <- latest_release,
-               {:ok, dt, _} <- DateTime.from_iso8601(date_str) do
-            dt
-          else
-            _ -> nil
-          end
+    latest_release_date =
+      with %{"inserted_at" => date_str} <- latest_release,
+           {:ok, dt, _} <- DateTime.from_iso8601(date_str) do
+        dt
+      else
+        _ -> nil
+      end
 
-        owners_count =
-          case Map.get(data, "owners") do
-            owners when is_list(owners) -> length(owners)
-            _ -> nil
-          end
+    owners_count =
+      case Map.get(data, "owners") do
+        owners when is_list(owners) -> length(owners)
+        _ -> nil
+      end
 
-        retired? =
-          case latest_release do
-            %{"retirement" => %{}} -> true
-            _ -> false
-          end
+    retired? =
+      case latest_release do
+        %{"retirement" => %{}} -> true
+        _ -> false
+      end
 
-        %HexMetadata{
-          downloads: downloads,
-          latest_version: latest_version,
-          latest_release_date: latest_release_date,
-          owner_count: owners_count,
-          description: Map.get(data, "meta", %{}) |> Map.get("description"),
-          retired?: retired?
-        }
-
-      {:error, _} ->
-        %HexMetadata{}
-    end
-  end
-
-  defp ssl_opts do
-    [
-      verify: :verify_peer,
-      cacerts: :public_key.cacerts_get(),
-      depth: 3,
-      customize_hostname_check: [
-        match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
-      ]
-    ]
+    %HexMetadata{
+      downloads: downloads,
+      latest_version: latest_version,
+      latest_release_date: latest_release_date,
+      owner_count: owners_count,
+      description: Map.get(data, "meta", %{}) |> Map.get("description"),
+      retired?: retired?
+    }
   end
 end

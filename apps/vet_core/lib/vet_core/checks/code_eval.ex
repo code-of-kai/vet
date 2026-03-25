@@ -1,6 +1,6 @@
 defmodule VetCore.Checks.CodeEval do
   @moduledoc false
-  @behaviour VetCore.Check
+  use VetCore.Check
 
   alias VetCore.AST.Walker
   alias VetCore.Checks.FileHelper
@@ -18,6 +18,8 @@ defmodule VetCore.Checks.CodeEval do
     {[:erlang], :binary_to_term},
     {[:Module], :create}
   ]
+
+  @pattern_set MapSet.new(@patterns)
 
   @descriptions %{
     {[:Code], :eval_string} =>
@@ -37,9 +39,6 @@ defmodule VetCore.Checks.CodeEval do
   }
 
   @impl true
-  def init(opts), do: opts
-
-  @impl true
   def run(%{name: dep_name} = _dependency, project_path, _state) do
     dep_name
     |> FileHelper.read_and_parse(project_path)
@@ -50,7 +49,7 @@ defmodule VetCore.Checks.CodeEval do
 
   defp matcher(node, state, dep_name, source) do
     with {_type, module, func, _args, meta} <- Walker.resolve_call(node, state),
-         true <- matches_pattern?(module, func) do
+         true <- Walker.matches_pattern?(module, func, @pattern_set) do
       is_ct = FileHelper.compile_time?(state.context_stack)
       severity = if is_ct, do: :critical, else: @base_severity
       line = meta[:line] || 0
@@ -73,10 +72,6 @@ defmodule VetCore.Checks.CodeEval do
     else
       _ -> nil
     end
-  end
-
-  defp matches_pattern?(module, func) do
-    Enum.any?(@patterns, fn {m, f} -> m == module and f == func end)
   end
 
   defp format_call([mod], func), do: "#{mod}.#{func}"

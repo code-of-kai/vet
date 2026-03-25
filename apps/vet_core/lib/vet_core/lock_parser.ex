@@ -19,7 +19,7 @@ defmodule VetCore.LockParser do
         {:ok, deps}
 
       {:error, reason} ->
-        {:error, {:lock_file, reason}}
+        {:error, "Failed to parse mix.lock: #{inspect(reason)}"}
     end
   end
 

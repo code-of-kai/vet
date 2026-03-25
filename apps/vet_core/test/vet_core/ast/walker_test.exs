@@ -1,9 +1,11 @@
 defmodule VetCore.AST.WalkerTest do
   use ExUnit.Case
 
+  alias VetCore.AST.Walker
   alias VetCore.Checks.FileHelper
+  alias VetCore.Types.Finding
 
-  test "FileHelper.walk_ast detects System.cmd in parsed AST" do
+  test "Walker.walk detects System.cmd in parsed AST" do
     source = """
     defmodule Foo do
       def run do
@@ -14,19 +16,29 @@ defmodule VetCore.AST.WalkerTest do
 
     {:ok, ast} = Code.string_to_quoted(source, columns: true)
 
-    findings =
-      FileHelper.walk_ast(ast, fn node, ctx ->
-        case node do
-          {{:., _, [{:__aliases__, _, [:System]}, :cmd]}, meta, _args} ->
-            [%{check: :system_cmd, line: meta[:line], compile_time: FileHelper.compile_time?(ctx)}]
+    matcher = fn node, state ->
+      case Walker.resolve_call(node, state) do
+        {_type, [:System], :cmd, _args, meta} ->
+          %Finding{
+            dep_name: :test,
+            file_path: state.file_path,
+            line: meta[:line] || 0,
+            check_id: :system_cmd,
+            category: :system_exec,
+            severity: :critical,
+            compile_time?: FileHelper.compile_time?(state.context_stack),
+            description: "System.cmd call"
+          }
 
-          _ ->
-            []
-        end
-      end)
+        _ ->
+          nil
+      end
+    end
+
+    findings = Walker.walk(ast, [matcher], "test.ex", :test)
 
     assert length(findings) > 0
-    assert hd(findings).check == :system_cmd
+    assert hd(findings).check_id == :system_cmd
   end
 
   test "detects compile-time code in module body" do
@@ -40,18 +52,28 @@ defmodule VetCore.AST.WalkerTest do
 
     {:ok, ast} = Code.string_to_quoted(source, columns: true)
 
-    findings =
-      FileHelper.walk_ast(ast, fn node, ctx ->
-        case node do
-          {{:., _, [{:__aliases__, _, [:System]}, :cmd]}, _meta, _args} ->
-            [%{compile_time: FileHelper.compile_time?(ctx)}]
+    matcher = fn node, state ->
+      case Walker.resolve_call(node, state) do
+        {_type, [:System], :cmd, _args, meta} ->
+          %Finding{
+            dep_name: :test,
+            file_path: state.file_path,
+            line: meta[:line] || 0,
+            check_id: :system_cmd,
+            category: :system_exec,
+            severity: :critical,
+            compile_time?: FileHelper.compile_time?(state.context_stack),
+            description: "System.cmd call"
+          }
 
-          _ ->
-            []
-        end
-      end)
+        _ ->
+          nil
+      end
+    end
 
-    compile_time_findings = Enum.filter(findings, & &1.compile_time)
+    findings = Walker.walk(ast, [matcher], "test.ex", :test)
+
+    compile_time_findings = Enum.filter(findings, & &1.compile_time?)
     assert length(compile_time_findings) > 0
   end
 
@@ -66,17 +88,27 @@ defmodule VetCore.AST.WalkerTest do
 
     {:ok, ast} = Code.string_to_quoted(source, columns: true)
 
-    findings =
-      FileHelper.walk_ast(ast, fn node, ctx ->
-        case node do
-          {{:., _, [{:__aliases__, _, [:File]}, :read!]}, _meta, _args} ->
-            [%{compile_time: FileHelper.compile_time?(ctx)}]
+    matcher = fn node, state ->
+      case Walker.resolve_call(node, state) do
+        {_type, [:File], :read!, _args, meta} ->
+          %Finding{
+            dep_name: :test,
+            file_path: state.file_path,
+            line: meta[:line] || 0,
+            check_id: :file_read,
+            category: :file_access,
+            severity: :warning,
+            compile_time?: FileHelper.compile_time?(state.context_stack),
+            description: "File.read! call"
+          }
 
-          _ ->
-            []
-        end
-      end)
+        _ ->
+          nil
+      end
+    end
 
-    assert Enum.any?(findings, fn f -> not f.compile_time end)
+    findings = Walker.walk(ast, [matcher], "test.ex", :test)
+
+    assert Enum.any?(findings, fn f -> not f.compile_time? end)
   end
 end

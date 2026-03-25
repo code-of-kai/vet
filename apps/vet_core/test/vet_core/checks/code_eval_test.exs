@@ -19,8 +19,7 @@ defmodule VetCore.Checks.CodeEvalTest do
     File.write!(Path.join(dep_dir, "module.ex"), source)
 
     dep = %Dependency{name: :test_dep, version: "1.0.0", source: :hex}
-    state = CodeEval.init([])
-    CodeEval.run(dep, tmp_dir, state)
+    CodeEval.run(dep, tmp_dir, [])
   end
 
   test "detects Code.eval_string", %{tmp_dir: tmp_dir} do

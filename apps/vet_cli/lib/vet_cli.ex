@@ -64,7 +64,7 @@ defmodule VetCli do
     end
   end
 
-  defp run_ai_review(report, threshold) do
+  def run_ai_review(report, threshold) do
     IO.puts("")
     IO.puts(IO.ANSI.bright() <> "Running AI deep review on flagged dependencies..." <> IO.ANSI.reset())
 

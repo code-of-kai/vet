@@ -1,6 +1,8 @@
 defmodule VetCore.Scanner do
   @moduledoc false
 
+  require Logger
+
   alias VetCore.Types.{DependencyReport, ScanReport}
 
   @checks [
@@ -18,10 +20,8 @@ defmodule VetCore.Scanner do
 
   @spec scan(String.t(), keyword()) :: {:ok, ScanReport.t()} | {:error, term()}
   def scan(project_path, opts \\ []) do
-    with {:ok, deps} <- VetCore.LockParser.parse(project_path) do
-      deps = VetCore.TreeBuilder.build(project_path, deps)
-      check_states = init_checks()
-
+    with {:ok, lock_deps} <- VetCore.LockParser.parse(project_path),
+         {:ok, deps} <- VetCore.TreeBuilder.build(project_path, lock_deps) do
       hex_metadata =
         if opts[:skip_hex] do
           %{}
@@ -33,13 +33,25 @@ defmodule VetCore.Scanner do
         VetCore.ScanSupervisor
         |> Task.Supervisor.async_stream_nolink(
           deps,
-          fn dep -> run_checks_for_dep(dep, project_path, check_states, hex_metadata, opts) end,
+          fn dep -> run_checks_for_dep(dep, project_path, hex_metadata, opts) end,
           ordered: true,
           max_concurrency: System.schedulers_online()
         )
+        |> Enum.zip(deps)
         |> Enum.map(fn
-          {:ok, report} -> report
-          {:exit, reason} -> raise "Check failed: #{inspect(reason)}"
+          {{:ok, report}, _dep} ->
+            report
+
+          {{:exit, reason}, dep} ->
+            Logger.warning("Check failed for #{dep.name}: #{inspect(reason)}")
+
+            %DependencyReport{
+              dependency: dep,
+              findings: [],
+              hex_metadata: Map.get(hex_metadata, dep.name),
+              risk_score: 0,
+              risk_level: :low
+            }
         end)
 
       summary = VetCore.Scorer.score_report(dependency_reports)
@@ -57,17 +69,11 @@ defmodule VetCore.Scanner do
 
   # -- Private -----------------------------------------------------------------
 
-  defp init_checks do
-    Enum.map(@checks, fn check_mod ->
-      {check_mod, check_mod.init([])}
-    end)
-  end
-
-  defp run_checks_for_dep(dep, project_path, check_states, hex_metadata, _opts) do
+  defp run_checks_for_dep(dep, project_path, hex_metadata, _opts) do
     all_findings =
-      check_states
-      |> Enum.flat_map(fn {check_mod, state} ->
-        check_mod.run(dep, project_path, state)
+      @checks
+      |> Enum.flat_map(fn check_mod ->
+        check_mod.run(dep, project_path, [])
       end)
 
     filtered_findings = VetCore.Allowlist.filter_findings(all_findings, dep.name, project_path)

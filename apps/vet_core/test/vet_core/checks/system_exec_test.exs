@@ -19,8 +19,7 @@ defmodule VetCore.Checks.SystemExecTest do
     File.write!(Path.join(dep_dir, "module.ex"), source)
 
     dep = %Dependency{name: :test_dep, version: "1.0.0", source: :hex}
-    state = SystemExec.init([])
-    SystemExec.run(dep, tmp_dir, state)
+    SystemExec.run(dep, tmp_dir, [])
   end
 
   test "detects System.cmd/2,3 in function bodies", %{tmp_dir: tmp_dir} do

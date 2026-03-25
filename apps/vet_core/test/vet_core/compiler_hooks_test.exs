@@ -71,8 +71,7 @@ defmodule VetCore.Checks.CompilerHooksTest do
 
   defp run_check do
     dep = %Dependency{name: :hook_dep, version: "1.0.0", source: :hex}
-    state = CompilerHooks.init([])
-    CompilerHooks.run(dep, @project_dir, state)
+    CompilerHooks.run(dep, @project_dir, [])
   end
 
   test "@before_compile is detected" do

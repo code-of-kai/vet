@@ -38,8 +38,25 @@ defmodule VetMcp.Tools.DiffPackageVersions do
         %{"package" => name, "from_version" => from_ver, "to_version" => to_ver},
         _context
       ) do
-    package_atom = String.to_atom(name)
+    package_atom =
+      try do
+        String.to_existing_atom(name)
+      rescue
+        ArgumentError -> nil
+      end
 
+    if is_nil(package_atom) do
+      {:error, "Unknown package: #{name}. Package must exist in deps/."}
+    else
+      execute_diff(package_atom, name, from_ver, to_ver)
+    end
+  end
+
+  def execute(_params, _context) do
+    {:error, "Missing required parameters: package, from_version, to_version"}
+  end
+
+  defp execute_diff(package_atom, name, from_ver, to_ver) do
     case VetCore.VersionDiff.diff(File.cwd!(), package_atom, from_ver, to_ver) do
       {:ok, diff} ->
         {suspicious?, signals} = VetCore.VersionDiff.suspicious_delta?(diff)
@@ -67,9 +84,5 @@ defmodule VetMcp.Tools.DiffPackageVersions do
       {:error, reason} ->
         {:error, "Version diff failed: #{inspect(reason)}"}
     end
-  end
-
-  def execute(_params, _context) do
-    {:error, "Missing required parameters: package, from_version, to_version"}
   end
 end

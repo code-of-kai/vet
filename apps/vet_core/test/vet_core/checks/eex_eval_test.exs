@@ -19,8 +19,7 @@ defmodule VetCore.Checks.EExEvalTest do
     File.write!(Path.join(dep_dir, "module.ex"), source)
 
     dep = %Dependency{name: :test_dep, version: "1.0.0", source: :hex}
-    state = EExEval.init([])
-    EExEval.run(dep, tmp_dir, state)
+    EExEval.run(dep, tmp_dir, [])
   end
 
   test "detects EEx.eval_string", %{tmp_dir: tmp_dir} do

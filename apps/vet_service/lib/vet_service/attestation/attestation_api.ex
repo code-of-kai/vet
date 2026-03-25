@@ -6,45 +6,38 @@ defmodule VetService.Attestation.AttestationAPI do
   (or disputing) scan findings, and to query current consensus.
   """
 
-  alias VetService.Events.CommunityAttestationSubmitted
   alias VetService.Attestation.Consensus
 
   @doc """
   Submit a new attestation for a package version's findings.
 
-  Returns the event that would be persisted.
+  Stores the attestation and returns `:ok`.
   """
-  @spec submit(String.t(), String.t(), String.t()) :: {:ok, struct()}
+  @spec submit(String.t(), String.t(), String.t()) :: :ok
   def submit(package_name, version, findings_hash) do
-    event = %CommunityAttestationSubmitted{
-      package_name: package_name,
-      version: version,
+    attestation = %{
       attestation_id: generate_id(),
       findings_hash: findings_hash,
       submitter_id: "anonymous",
       submitted_at: DateTime.utc_now()
     }
 
-    {:ok, event}
+    VetService.submit_attestation(package_name, version, attestation)
   end
 
   @doc """
   Query the current attestation consensus for a package version.
 
-  In production this reads from the AttestationSummary projection.
-  For now returns a computed consensus from the provided attestations.
+  Reads attestations from the Store and computes consensus.
   """
-  @spec query(String.t(), String.t()) :: {:ok, map()}
+  @spec query(String.t(), String.t()) :: map()
   def query(package_name, version) do
-    # Placeholder: in production, read from AttestationSummary projection
-    {:ok,
-     %{
-       package_name: package_name,
-       version: version,
-       consensus_hash: nil,
-       agreement_ratio: 0.0,
-       total_attestations: 0
-     }}
+    consensus = VetService.get_consensus(package_name, version)
+
+    Map.merge(consensus, %{
+      package_name: package_name,
+      version: version
+    })
   end
 
   @doc """

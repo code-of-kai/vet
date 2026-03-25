@@ -366,4 +366,12 @@ defmodule VetCore.AST.Walker do
       _ -> nil
     end
   end
+
+  @doc """
+  Check if a {module_segments, function} pair matches a set of known patterns.
+  """
+  @spec matches_pattern?([atom()], atom(), MapSet.t()) :: boolean()
+  def matches_pattern?(module, func, pattern_set) do
+    MapSet.member?(pattern_set, {module, func})
+  end
 end

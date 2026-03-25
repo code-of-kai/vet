@@ -1,6 +1,6 @@
 defmodule VetCore.Checks.AtomExhaustion do
   @moduledoc false
-  @behaviour VetCore.Check
+  use VetCore.Check
 
   alias VetCore.AST.Walker
   alias VetCore.Checks.FileHelper
@@ -16,6 +16,8 @@ defmodule VetCore.Checks.AtomExhaustion do
     {[:erlang], :list_to_atom}
   ]
 
+  @pattern_set MapSet.new(@patterns)
+
   @descriptions %{
     {[:String], :to_atom} => "Call to String.to_atom — DoS via atom table exhaustion",
     {[:List], :to_atom} => "Call to List.to_atom — DoS via atom table exhaustion",
@@ -24,9 +26,6 @@ defmodule VetCore.Checks.AtomExhaustion do
     {[:erlang], :list_to_atom} =>
       "Call to :erlang.list_to_atom — DoS via atom table exhaustion"
   }
-
-  @impl true
-  def init(opts), do: opts
 
   @impl true
   def run(%{name: dep_name} = _dependency, project_path, _state) do
@@ -39,7 +38,7 @@ defmodule VetCore.Checks.AtomExhaustion do
 
   defp matcher(node, state, dep_name, source) do
     with {_type, module, func, _args, meta} <- Walker.resolve_call(node, state),
-         true <- matches_pattern?(module, func) do
+         true <- Walker.matches_pattern?(module, func, @pattern_set) do
       is_ct = FileHelper.compile_time?(state.context_stack)
       severity = if is_ct, do: :critical, else: @base_severity
       line = meta[:line] || 0
@@ -62,10 +61,6 @@ defmodule VetCore.Checks.AtomExhaustion do
     else
       _ -> nil
     end
-  end
-
-  defp matches_pattern?(module, func) do
-    Enum.any?(@patterns, fn {m, f} -> m == module and f == func end)
   end
 
   defp format_call([mod], func), do: "#{mod}.#{func}"

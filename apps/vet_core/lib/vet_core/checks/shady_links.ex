@@ -1,6 +1,6 @@
 defmodule VetCore.Checks.ShadyLinks do
   @moduledoc false
-  @behaviour VetCore.Check
+  use VetCore.Check
 
   alias VetCore.Types.Finding
 
@@ -24,9 +24,6 @@ defmodule VetCore.Checks.ShadyLinks do
       {~r/https?:\/\/\d+\.\d+\.\d+\.\d+/, "Raw IP address URL — suspicious hardcoded IP endpoint"}
     ]
   end
-
-  @impl true
-  def init(opts), do: opts
 
   @impl true
   def run(%{name: dep_name} = _dependency, project_path, _state) do

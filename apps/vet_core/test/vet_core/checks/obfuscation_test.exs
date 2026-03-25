@@ -19,8 +19,7 @@ defmodule VetCore.Checks.ObfuscationTest do
     File.write!(Path.join(dep_dir, "module.ex"), source)
 
     dep = %Dependency{name: :test_dep, version: "1.0.0", source: :hex}
-    state = Obfuscation.init([])
-    Obfuscation.run(dep, tmp_dir, state)
+    Obfuscation.run(dep, tmp_dir, [])
   end
 
   test "Base.decode64 + Code.eval_string in same scope is detected", %{tmp_dir: tmp_dir} do

@@ -19,8 +19,7 @@ defmodule VetCore.Checks.EnvAccessTest do
     File.write!(Path.join(dep_dir, "module.ex"), source)
 
     dep = %Dependency{name: :test_dep, version: "1.0.0", source: :hex}
-    state = EnvAccess.init([])
-    EnvAccess.run(dep, tmp_dir, state)
+    EnvAccess.run(dep, tmp_dir, [])
   end
 
   test "System.get_env/0 (whole env dump) gets :critical", %{tmp_dir: tmp_dir} do

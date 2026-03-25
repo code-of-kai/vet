@@ -1,6 +1,6 @@
 defmodule VetCore.Checks.FileAccess do
   @moduledoc false
-  @behaviour VetCore.Check
+  use VetCore.Check
 
   alias VetCore.AST.Walker
   alias VetCore.Checks.FileHelper
@@ -12,9 +12,6 @@ defmodule VetCore.Checks.FileAccess do
   @sensitive_paths ~w(~/.ssh ~/.aws ~/.kube ~/.gnupg ~/.config /etc/passwd /etc/shadow)
 
   @file_functions [:read!, :write!, :stream!, :rm, :rm_rf, :read, :write, :cp, :cp_r]
-
-  @impl true
-  def init(opts), do: opts
 
   @impl true
   def run(%{name: dep_name} = _dependency, project_path, _state) do

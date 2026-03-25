@@ -19,8 +19,7 @@ defmodule VetCore.Checks.FileAccessTest do
     File.write!(Path.join(dep_dir, "module.ex"), source)
 
     dep = %Dependency{name: :test_dep, version: "1.0.0", source: :hex}
-    state = FileAccess.init([])
-    FileAccess.run(dep, tmp_dir, state)
+    FileAccess.run(dep, tmp_dir, [])
   end
 
   test "detects File.read!", %{tmp_dir: tmp_dir} do

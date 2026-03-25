@@ -10,7 +10,7 @@ defmodule VetCore.LLMReview do
   alias VetCore.Checks.FileHelper
 
   @default_model "claude-sonnet-4-20250514"
-  @api_url ~c"https://api.anthropic.com/v1/messages"
+  @api_url "https://api.anthropic.com/v1/messages"
 
   @type review_result :: %{
           ai_analysis: String.t(),
@@ -122,58 +122,37 @@ defmodule VetCore.LLMReview do
 
   # -- Private: API ------------------------------------------------------------
 
-  defp call_api(api_key, model, prompt, max_tokens) do
-    # Ensure inets and ssl are started
-    :inets.start()
-    :ssl.start()
+  defp call_api(api_key, _model, prompt, _max_tokens) do
+    case Req.post(
+           @api_url,
+           headers: [
+             {"x-api-key", api_key},
+             {"anthropic-version", "2023-06-01"},
+             {"content-type", "application/json"}
+           ],
+           json: %{
+             model: "claude-sonnet-4-20250514",
+             max_tokens: 2048,
+             messages: [%{role: "user", content: prompt}]
+           }
+         ) do
+      {:ok, %{status: 200, body: body}} ->
+        parse_response(body)
 
-    body =
-      Jason.encode!(%{
-        model: model,
-        max_tokens: max_tokens,
-        messages: [
-          %{role: "user", content: prompt}
-        ]
-      })
-
-    headers = [
-      {~c"content-type", ~c"application/json"},
-      {~c"x-api-key", String.to_charlist(api_key)},
-      {~c"anthropic-version", ~c"2023-06-01"}
-    ]
-
-    request = {@api_url, headers, ~c"application/json", body}
-
-    case :httpc.request(:post, request, [{:timeout, 120_000}], []) do
-      {:ok, {{_, 200, _}, _headers, response_body}} ->
-        parse_response(to_string(response_body))
-
-      {:ok, {{_, 429, _}, _headers, _body}} ->
+      {:ok, %{status: 429}} ->
         {:error, :rate_limited}
 
-      {:ok, {{_, status, _}, _headers, response_body}} ->
-        {:error, {:api_error, status, to_string(response_body)}}
+      {:ok, %{status: status, body: body}} ->
+        {:error, "API error #{status}: #{inspect(body)}"}
 
       {:error, reason} ->
-        {:error, {:http_error, reason}}
+        {:error, "Request failed: #{inspect(reason)}"}
     end
   end
 
-  defp parse_response(body) do
-    case Jason.decode(body) do
-      {:ok, %{"content" => [%{"text" => text} | _]}} ->
-        {:ok, text}
-
-      {:ok, %{"error" => %{"message" => msg}}} ->
-        {:error, {:api_error, msg}}
-
-      {:ok, other} ->
-        {:error, {:unexpected_response, other}}
-
-      {:error, reason} ->
-        {:error, {:json_decode_error, reason}}
-    end
-  end
+  defp parse_response(%{"content" => [%{"text" => text} | _]}), do: {:ok, text}
+  defp parse_response(%{"error" => %{"message" => msg}}), do: {:error, {:api_error, msg}}
+  defp parse_response(other), do: {:error, {:unexpected_response, other}}
 
   # -- Private: Prompt building ------------------------------------------------
 

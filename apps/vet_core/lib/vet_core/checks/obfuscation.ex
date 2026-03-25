@@ -1,6 +1,6 @@
 defmodule VetCore.Checks.Obfuscation do
   @moduledoc false
-  @behaviour VetCore.Check
+  use VetCore.Check
 
   alias VetCore.AST.Walker
   alias VetCore.Checks.FileHelper
@@ -11,9 +11,6 @@ defmodule VetCore.Checks.Obfuscation do
 
   @entropy_threshold 5.5
   @min_string_length 40
-
-  @impl true
-  def init(opts), do: opts
 
   @impl true
   def run(%{name: dep_name} = _dependency, project_path, _state) do

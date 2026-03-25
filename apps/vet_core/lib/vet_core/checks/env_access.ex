@@ -1,6 +1,6 @@
 defmodule VetCore.Checks.EnvAccess do
   @moduledoc false
-  @behaviour VetCore.Check
+  use VetCore.Check
 
   alias VetCore.AST.Walker
   alias VetCore.Checks.FileHelper
@@ -10,9 +10,6 @@ defmodule VetCore.Checks.EnvAccess do
   @base_severity :warning
 
   @sensitive_patterns ~w(SECRET KEY TOKEN PASSWORD CREDENTIAL AWS_ GITHUB_ DATABASE_URL)
-
-  @impl true
-  def init(opts), do: opts
 
   @impl true
   def run(%{name: dep_name} = _dependency, project_path, _state) do

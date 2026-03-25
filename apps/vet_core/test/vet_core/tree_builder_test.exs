@@ -50,7 +50,7 @@ defmodule VetCore.TreeBuilderTest do
       %Dependency{name: :parent_dep, version: "1.0.0", source: :hex}
     ]
 
-    result = TreeBuilder.build(tmp_dir, deps)
+    assert {:ok, result} = TreeBuilder.build(tmp_dir, deps)
 
     assert length(result) == 1
     parent = hd(result)
@@ -80,7 +80,7 @@ defmodule VetCore.TreeBuilderTest do
     ]
 
     # Should not crash; missing dep directory means empty children
-    result = TreeBuilder.build(tmp_dir, deps)
+    assert {:ok, result} = TreeBuilder.build(tmp_dir, deps)
 
     assert length(result) == 1
     dep = hd(result)
@@ -108,7 +108,7 @@ defmodule VetCore.TreeBuilderTest do
       %Dependency{name: :transitive_dep, version: "0.5.0", source: :hex}
     ]
 
-    result = TreeBuilder.build(tmp_dir, deps)
+    assert {:ok, result} = TreeBuilder.build(tmp_dir, deps)
 
     direct = Enum.find(result, &(&1.name == :direct_dep))
     transitive = Enum.find(result, &(&1.name == :transitive_dep))

@@ -6,13 +6,18 @@ defmodule VetCore.TreeBuilder do
   def build(project_path, deps) do
     direct_deps = read_direct_deps(project_path)
 
-    deps
-    |> Enum.map(fn dep ->
-      children = read_dep_children(project_path, dep.name)
-      direct? = dep.name in direct_deps
+    result =
+      deps
+      |> Enum.map(fn dep ->
+        children = read_dep_children(project_path, dep.name)
+        direct? = dep.name in direct_deps
 
-      %Dependency{dep | children: children, direct?: direct?}
-    end)
+        %Dependency{dep | children: children, direct?: direct?}
+      end)
+
+    {:ok, result}
+  rescue
+    e -> {:error, "Failed to build dependency tree: #{Exception.message(e)}"}
   end
 
   defp read_direct_deps(project_path) do

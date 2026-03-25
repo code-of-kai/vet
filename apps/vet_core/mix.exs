@@ -17,14 +17,15 @@ defmodule VetCore.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :inets, :ssl],
+      extra_applications: [:logger],
       mod: {VetCore.Application, []}
     ]
   end
 
   defp deps do
     [
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:req, "~> 0.5"}
     ]
   end
 end

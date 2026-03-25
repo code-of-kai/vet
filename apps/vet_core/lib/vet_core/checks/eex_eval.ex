@@ -1,6 +1,6 @@
 defmodule VetCore.Checks.EExEval do
   @moduledoc false
-  @behaviour VetCore.Check
+  use VetCore.Check
 
   alias VetCore.AST.Walker
   alias VetCore.Checks.FileHelper
@@ -15,6 +15,8 @@ defmodule VetCore.Checks.EExEval do
     {[:EEx], :compile_file}
   ]
 
+  @pattern_set MapSet.new(@patterns)
+
   @descriptions %{
     {[:EEx], :eval_string} =>
       {"Call to EEx.eval_string — code execution via template evaluation", :critical},
@@ -27,9 +29,6 @@ defmodule VetCore.Checks.EExEval do
   }
 
   @impl true
-  def init(opts), do: opts
-
-  @impl true
   def run(%{name: dep_name} = _dependency, project_path, _state) do
     dep_name
     |> FileHelper.read_and_parse(project_path)
@@ -40,7 +39,7 @@ defmodule VetCore.Checks.EExEval do
 
   defp matcher(node, state, dep_name, source) do
     with {_type, module, func, _args, meta} <- Walker.resolve_call(node, state),
-         true <- matches_pattern?(module, func) do
+         true <- Walker.matches_pattern?(module, func, @pattern_set) do
       {description, base_severity} = Map.fetch!(@descriptions, {module, func})
       is_ct = FileHelper.compile_time?(state.context_stack)
       severity = if is_ct, do: :critical, else: base_severity
@@ -63,7 +62,4 @@ defmodule VetCore.Checks.EExEval do
     end
   end
 
-  defp matches_pattern?(module, func) do
-    Enum.any?(@patterns, fn {m, f} -> m == module and f == func end)
-  end
 end

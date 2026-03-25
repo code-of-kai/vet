@@ -19,8 +19,7 @@ defmodule VetCore.Checks.NetworkAccessTest do
     File.write!(Path.join(dep_dir, "module.ex"), source)
 
     dep = %Dependency{name: :test_dep, version: "1.0.0", source: :hex}
-    state = NetworkAccess.init([])
-    NetworkAccess.run(dep, tmp_dir, state)
+    NetworkAccess.run(dep, tmp_dir, [])
   end
 
   test "detects :httpc.request", %{tmp_dir: tmp_dir} do

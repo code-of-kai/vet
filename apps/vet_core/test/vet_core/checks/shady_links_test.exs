@@ -19,8 +19,7 @@ defmodule VetCore.Checks.ShadyLinksTest do
     File.write!(Path.join(dep_dir, "module.ex"), source)
 
     dep = %Dependency{name: :test_dep, version: "1.0.0", source: :hex}
-    state = ShadyLinks.init([])
-    ShadyLinks.run(dep, tmp_dir, state)
+    ShadyLinks.run(dep, tmp_dir, [])
   end
 
   test "detects ngrok.io URLs", %{tmp_dir: tmp_dir} do
@@ -116,8 +115,7 @@ defmodule VetCore.Checks.ShadyLinksTest do
     """)
 
     dep = %Dependency{name: :test_dep, version: "1.0.0", source: :hex}
-    state = ShadyLinks.init([])
-    findings = ShadyLinks.run(dep, tmp_dir, state)
+    findings = ShadyLinks.run(dep, tmp_dir, [])
 
     # Should not find ngrok in test directory files
     ngrok_findings = Enum.filter(findings, &(&1.description =~ "ngrok"))

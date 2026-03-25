@@ -31,11 +31,35 @@ defmodule VetMcp.Tools.CheckPackage do
 
   @impl true
   def execute(%{"package" => name} = params, _context) do
-    metadata = VetCore.Metadata.HexChecker.fetch_metadata(String.to_atom(name))
+    package_atom =
+      try do
+        String.to_existing_atom(name)
+      rescue
+        ArgumentError -> nil
+      end
+
+    if is_nil(package_atom) do
+      {:error, "Unknown package: #{name}. Package must exist in deps/."}
+    else
+      execute_check(package_atom, name, params)
+    end
+  end
+
+  def execute(_params, _context) do
+    {:error, "Missing required parameter: package"}
+  end
+
+  defp execute_check(package_atom, name, params) do
+    metadata =
+      case VetCore.Metadata.HexChecker.fetch_metadata(package_atom) do
+        {:ok, meta} -> meta
+        {:error, _} -> %VetCore.Types.HexMetadata{}
+      end
+
     version = Map.get(params, "version", metadata.latest_version)
 
     dep = %VetCore.Types.Dependency{
-      name: String.to_atom(name),
+      name: package_atom,
       source: :hex,
       version: version
     }
@@ -60,10 +84,6 @@ defmodule VetMcp.Tools.CheckPackage do
     }
 
     {:ok, Jason.encode!(result, pretty: true)}
-  end
-
-  def execute(_params, _context) do
-    {:error, "Missing required parameter: package"}
   end
 
   defp assess(metadata, typosquat_findings) do

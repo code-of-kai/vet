@@ -1,11 +1,13 @@
 defmodule VetCore.Checks.FileHelper do
   @moduledoc false
 
+  require Logger
+
   @doc """
   Finds all .ex and .exs files in a dependency's directory, reads each file,
   parses it to AST, and returns a list of `{file_path, source, ast}` tuples.
 
-  Files that fail to parse are silently skipped.
+  Files that fail to parse are skipped with a warning.
   """
   @spec read_and_parse(dep_name :: atom(), project_path :: String.t()) ::
           [{String.t(), String.t(), Macro.t()}]
@@ -26,7 +28,12 @@ defmodule VetCore.Checks.FileHelper do
            {:ok, ast} <- Code.string_to_quoted(source, columns: true, file: file_path) do
         [{file_path, source, ast}]
       else
-        _ -> []
+        {:error, reason} ->
+          Logger.warning("Vet: skipping #{file_path}: #{inspect(reason)}")
+          []
+        _ ->
+          Logger.warning("Vet: skipping #{file_path}: parse error")
+          []
       end
     end)
   end
@@ -66,50 +73,4 @@ defmodule VetCore.Checks.FileHelper do
     end
   end
 
-  @doc """
-  Walks the AST with context tracking, calling `match_fn` on each node.
-  `match_fn` receives `(node, context_stack)` and should return a list of findings
-  (possibly empty). Returns a flat list of all findings.
-  """
-  @spec walk_ast(Macro.t(), (Macro.t(), list(atom()) -> [map()])) :: [map()]
-  def walk_ast(ast, match_fn) do
-    {_ast, {_ctx, findings}} =
-      Macro.traverse(ast, {[], []}, &pre_walk(&1, &2, match_fn), &post_walk/2)
-
-    Enum.reverse(findings)
-  end
-
-  defp pre_walk({form, _meta, _args} = node, {ctx, findings}, match_fn)
-       when form in [:defmodule] do
-    new_findings = match_fn.(node, ctx)
-    {node, {[:module_body | ctx], new_findings ++ findings}}
-  end
-
-  defp pre_walk({form, _meta, _args} = node, {ctx, findings}, match_fn)
-       when form in [:def, :defp] do
-    new_findings = match_fn.(node, ctx)
-    {node, {[form | ctx], new_findings ++ findings}}
-  end
-
-  defp pre_walk({form, _meta, _args} = node, {ctx, findings}, match_fn)
-       when form in [:defmacro, :defmacrop] do
-    new_findings = match_fn.(node, ctx)
-    {node, {[form | ctx], new_findings ++ findings}}
-  end
-
-  defp pre_walk(node, {ctx, findings}, match_fn) do
-    new_findings = match_fn.(node, ctx)
-    {node, {ctx, new_findings ++ findings}}
-  end
-
-  defp post_walk({form, _meta, _args} = node, {[form | rest], findings})
-       when form in [:defmodule, :def, :defp, :defmacro, :defmacrop] do
-    {node, {rest, findings}}
-  end
-
-  defp post_walk({:defmodule, _meta, _args} = node, {[:module_body | rest], findings}) do
-    {node, {rest, findings}}
-  end
-
-  defp post_walk(node, acc), do: {node, acc}
 end
