@@ -10,7 +10,7 @@ defmodule VetCore.Blackhat.EvasionVectorsTest do
   """
   use ExUnit.Case, async: true
 
-  alias VetCore.Checks.{SystemExec, CodeEval, FileAccess, Obfuscation}
+  alias VetCore.Checks.{SystemExec, CodeEval, FileAccess, Obfuscation, EExEval, AtomExhaustion}
   alias VetCore.Types.Dependency
 
   # ---------------------------------------------------------------------------
@@ -182,7 +182,6 @@ defmodule VetCore.Blackhat.EvasionVectorsTest do
   # ---------------------------------------------------------------------------
 
   describe "EEx.eval_string code execution" do
-    @tag :known_gap
     setup do
       source = ~S"""
       defmodule Evasion.EExEval do
@@ -197,16 +196,12 @@ defmodule VetCore.Blackhat.EvasionVectorsTest do
       %{project_path: tmp_dir, dep: dep}
     end
 
-    @tag :known_gap
-    test "KNOWN GAP: EEx.eval_string is not covered by CodeEval",
+    test "EEx.eval_string detected by EExEval check",
          %{project_path: path, dep: dep} do
-      # CodeEval only matches Code.eval_string, Code.eval_quoted, Code.eval_file,
-      # Code.compile_string, Code.compile_quoted, and :erlang.binary_to_term.
-      # EEx.eval_string is a separate code execution vector that compiles and
-      # evaluates EEx templates — not currently tracked.
-      findings = CodeEval.run(dep, path, [])
-      eval_findings = Enum.filter(findings, &(&1.check_id == :code_eval))
-      assert eval_findings == []
+      findings = EExEval.run(dep, path, [])
+      assert length(findings) >= 1
+      assert Enum.any?(findings, &(&1.category == :code_eval))
+      assert Enum.any?(findings, &(&1.description =~ "EEx.eval_string"))
     end
   end
 
@@ -215,7 +210,6 @@ defmodule VetCore.Blackhat.EvasionVectorsTest do
   # ---------------------------------------------------------------------------
 
   describe "atom exhaustion DoS" do
-    @tag :known_gap
     setup do
       source = ~S"""
       defmodule Evasion.AtomExhaustion do
@@ -231,20 +225,12 @@ defmodule VetCore.Blackhat.EvasionVectorsTest do
       %{project_path: tmp_dir, dep: dep}
     end
 
-    @tag :known_gap
-    test "KNOWN GAP: String.to_atom not detected (no DoS check exists)",
+    test "String.to_atom detected by AtomExhaustion check",
          %{project_path: path, dep: dep} do
-      # Sobelow flags String.to_atom(user_input) as a denial-of-service vector
-      # because atoms are never garbage collected. Vet has no DoS category or
-      # check for this pattern yet.
-      # Run all available checks to confirm nothing catches it.
-      all_findings =
-        SystemExec.run(dep, path, []) ++
-          CodeEval.run(dep, path, []) ++
-          FileAccess.run(dep, path, []) ++
-          Obfuscation.run(dep, path, [])
-
-      assert all_findings == []
+      findings = AtomExhaustion.run(dep, path, [])
+      assert length(findings) >= 1
+      assert Enum.any?(findings, &(&1.category == :dos_atom_exhaustion))
+      assert Enum.any?(findings, &(&1.description =~ "String.to_atom"))
     end
   end
 
