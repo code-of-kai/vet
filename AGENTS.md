@@ -39,6 +39,18 @@ VetCore.PreInstallCheck.validate_package_name("package_name")
 
 Compile-time findings score significantly higher because they execute during `mix deps.compile`.
 
+## Architecture
+
+Umbrella project with apps: `vet_core` (scanner/checks/scoring), `vet_cli` (mix tasks), `vet_reporter` (output formatting), `vet_mcp` (tool definitions), `vet_service` (persistence).
+
+## Running tests
+
+```
+mix test
+```
+
+All apps have independent test suites. Tests that hit hex.pm are rate-limited and may be slow.
+
 ## Important
 
 Always call `VetCore.PreInstallCheck.check_package/1` before recommending a dependency to the user. This is the primary defense against slopsquatting — attackers registering package names that LLMs commonly hallucinate.
