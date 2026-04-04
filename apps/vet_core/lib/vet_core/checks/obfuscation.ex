@@ -24,7 +24,8 @@ defmodule VetCore.Checks.Obfuscation do
           ast,
           [
             &match_high_entropy(&1, &2, dep_name, source),
-            &match_dynamic_apply(&1, &2, dep_name, source)
+            &match_dynamic_apply(&1, &2, dep_name, source),
+            &match_crypto_decryption(&1, &2, dep_name, source)
           ],
           file_path,
           dep_name
@@ -189,6 +190,42 @@ defmodule VetCore.Checks.Obfuscation do
        meta[:line] || 0, meta[:column]}
     else
       _ -> nil
+    end
+  end
+
+  # ---------- Pattern 4: Crypto decryption calls ----------
+  # Flags :crypto module decryption functions. Individually a warning, but
+  # the scanner's correlate_findings elevates this when combined with
+  # high-entropy strings in the same dependency.
+
+  @crypto_decryption_fns ~w(
+    block_decrypt crypto_one_time stream_decrypt
+    crypto_one_time_aead block_decrypt_init
+  )a
+
+  defp match_crypto_decryption(node, state, dep_name, source) do
+    case node do
+      {{:., meta, [:crypto, func]}, _, _args} when func in @crypto_decryption_fns ->
+        line = meta[:line] || 0
+        is_ct = FileHelper.compile_time?(state.context_stack)
+
+        %Finding{
+          dep_name: dep_name,
+          file_path: state.file_path,
+          line: line,
+          column: meta[:column],
+          check_id: :obfuscation_crypto_decrypt,
+          category: @category,
+          severity: @base_severity,
+          compile_time?: is_ct,
+          snippet: FileHelper.snippet(source, line),
+          description:
+            "Call to :crypto.#{func} — decryption capability " <>
+              "(suspicious when paired with high-entropy payloads)"
+        }
+
+      _ ->
+        nil
     end
   end
 

@@ -138,12 +138,63 @@ defmodule VetCore.Scanner do
     |> MapSet.delete(name)
   end
 
+  # Cross-check: when individually-weak signals appear together, they become strong.
+  defp correlate_findings(findings) do
+    findings
+    |> elevate_apply_with_network()
+    |> elevate_entropy_with_crypto()
+  end
+
+  # apply/3 (warning) + network access in the same dependency = likely exfiltration pipeline
+  defp elevate_apply_with_network(findings) do
+    has_network? = Enum.any?(findings, &(&1.category == :network_access))
+
+    if has_network? do
+      Enum.map(findings, fn finding ->
+        if finding.check_id == :obfuscation_dynamic_apply do
+          %{finding |
+            severity: :critical,
+            description: finding.description <>
+              " (ELEVATED: combined with network access in the same dependency — likely exfiltration pipeline)"
+          }
+        else
+          finding
+        end
+      end)
+    else
+      findings
+    end
+  end
+
+  # High-entropy string + crypto decryption calls = possible encrypted malicious payload
+  defp elevate_entropy_with_crypto(findings) do
+    has_entropy? = Enum.any?(findings, &(&1.check_id == :obfuscation_entropy))
+    has_crypto? = Enum.any?(findings, &(&1.check_id == :obfuscation_crypto_decrypt))
+
+    if has_entropy? and has_crypto? do
+      Enum.map(findings, fn finding ->
+        if finding.check_id in [:obfuscation_entropy, :obfuscation_crypto_decrypt] do
+          %{finding |
+            severity: :critical,
+            description: finding.description <>
+              " (ELEVATED: high-entropy payload paired with decryption capability — possible encrypted malicious code)"
+          }
+        else
+          finding
+        end
+      end)
+    else
+      findings
+    end
+  end
+
   defp run_checks_for_dep(dep, project_path, hex_metadata, _opts) do
     all_findings =
       @checks
       |> Enum.flat_map(fn check_mod ->
         check_mod.run(dep, project_path, [])
       end)
+      |> correlate_findings()
 
     filtered_findings = VetCore.Allowlist.filter_findings(all_findings, dep.name, project_path)
 
