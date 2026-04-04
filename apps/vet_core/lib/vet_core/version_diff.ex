@@ -88,13 +88,22 @@ defmodule VetCore.VersionDiff do
     {signals != [], signals}
   end
 
+  @package_name_re ~r/^[a-z][a-z0-9_]{0,63}$/
+  @version_re ~r/^[a-zA-Z0-9._\-+]{1,64}$/
+
   defp fetch_version_source(package_name, version) do
-    tmp_dir = Path.join(System.tmp_dir!(), "vet_diff_#{package_name}_#{version}")
+    name_str = to_string(package_name)
+
+    unless Regex.match?(@package_name_re, name_str) and Regex.match?(@version_re, version) do
+      raise ArgumentError, "Invalid package name or version: #{name_str} #{version}"
+    end
+
+    tmp_dir = Path.join(System.tmp_dir!(), "vet_diff_#{name_str}_#{version}")
 
     if File.dir?(tmp_dir) do
       tmp_dir
     else
-      case System.cmd("mix", ["hex.package", "fetch", to_string(package_name), version, "--output", tmp_dir],
+      case System.cmd("mix", ["hex.package", "fetch", name_str, version, "--output", tmp_dir],
              stderr_to_stdout: true
            ) do
         {_output, 0} -> tmp_dir

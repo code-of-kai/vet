@@ -78,14 +78,11 @@ defmodule VetCore.Allowlist do
 
     case File.read(config_path) do
       {:ok, contents} ->
-        case Code.eval_string(contents) do
-          {config, _bindings} when is_map(config) ->
-            parse_user_suppressions(config)
+        case Code.string_to_quoted(contents) do
+          {:ok, ast} ->
+            extract_suppressions_from_ast(ast)
 
-          {config, _bindings} when is_list(config) ->
-            parse_user_suppressions(%{allow: config})
-
-          _ ->
+          {:error, _} ->
             []
         end
 
@@ -93,6 +90,40 @@ defmodule VetCore.Allowlist do
         []
     end
   end
+
+  defp extract_suppressions_from_ast({:%{}, _meta, entries}) when is_list(entries) do
+    # Map literal: %{allow: [...]}
+    case Keyword.get(entries, :allow) do
+      nil -> []
+      list_ast -> parse_suppression_list_ast(list_ast)
+    end
+  end
+
+  defp extract_suppressions_from_ast(list_ast) when is_list(list_ast) do
+    # Bare list: [{:pkg, :category, "reason"}, ...]
+    parse_suppression_list_ast(list_ast)
+  end
+
+  defp extract_suppressions_from_ast(_), do: []
+
+  defp parse_suppression_list_ast(items) when is_list(items) do
+    Enum.flat_map(items, fn
+      # 3-tuple: {:pkg, :category, "reason"}
+      {:{}, _meta, [dep_name, category, reason]}
+      when is_atom(dep_name) and is_atom(category) and is_binary(reason) ->
+        [{dep_name, category, reason}]
+
+      # 2-tuple: {:pkg, :category} — represented as plain keyword pair in AST
+      {dep_name, category}
+      when is_atom(dep_name) and is_atom(category) ->
+        [{dep_name, category, "User allowlisted"}]
+
+      _ ->
+        []
+    end)
+  end
+
+  defp parse_suppression_list_ast(_), do: []
 
   @spec filter_findings([Finding.t()], atom(), String.t()) :: [Finding.t()]
   def filter_findings(findings, dep_name, project_path) do

@@ -27,6 +27,6 @@ defmodule VetCore.LockParserTest do
   end
 
   test "returns error for missing lock file" do
-    assert {:error, "Failed to parse mix.lock: :enoent"} = LockParser.parse("/nonexistent")
+    assert {:error, "Failed to read mix.lock: :enoent"} = LockParser.parse("/nonexistent")
   end
 end

@@ -24,15 +24,21 @@ defmodule VetCore.Checks.FileHelper do
     |> Enum.flat_map(&Path.wildcard/1)
     |> Enum.uniq()
     |> Enum.flat_map(fn file_path ->
-      with {:ok, source} <- File.read(file_path),
-           {:ok, ast} <- Code.string_to_quoted(source, columns: true, file: file_path) do
-        [{file_path, source, ast}]
-      else
-        {:error, reason} ->
-          Logger.warning("Vet: skipping #{file_path}: #{inspect(reason)}")
-          []
-        _ ->
-          Logger.warning("Vet: skipping #{file_path}: parse error")
+      try do
+        with {:ok, source} <- File.read(file_path),
+             {:ok, ast} <- Code.string_to_quoted(source, columns: true, file: file_path) do
+          [{file_path, source, ast}]
+        else
+          {:error, reason} ->
+            Logger.warning("Vet: skipping #{file_path}: #{inspect(reason)}")
+            []
+          _ ->
+            Logger.warning("Vet: skipping #{file_path}: parse error")
+            []
+        end
+      rescue
+        e ->
+          Logger.warning("Vet: skipping #{file_path}: #{Exception.message(e)}")
           []
       end
     end)
