@@ -88,8 +88,8 @@ defmodule VetCore.VersionDiff do
     {signals != [], signals}
   end
 
-  @package_name_re ~r/^[a-z][a-z0-9_]{0,63}$/
-  @version_re ~r/^[a-zA-Z0-9._\-+]{1,64}$/
+  @package_name_re ~r/\A[a-z][a-z0-9_]{0,63}\z/
+  @version_re ~r/\A[a-zA-Z0-9._\-+]{1,64}\z/
 
   defp fetch_version_source(package_name, version) do
     name_str = to_string(package_name)

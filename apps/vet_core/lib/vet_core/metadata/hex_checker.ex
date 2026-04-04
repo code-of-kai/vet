@@ -39,8 +39,8 @@ defmodule VetCore.Metadata.HexChecker do
   @doc false
   def parse_hex_response(data) do
     downloads =
-      case get_in(data, ["downloads", "all"]) do
-        n when is_integer(n) -> n
+      case data do
+        %{"downloads" => %{"all" => n}} when is_integer(n) -> n
         _ -> 0
       end
 

@@ -14,7 +14,7 @@ defmodule VetCore.PreInstallCheck do
   alias VetCore.TreeBuilder
   alias VetCore.Types.{Dependency, Finding}
 
-  @package_name_re ~r/^[a-z][a-z0-9_]{0,63}$/
+  @package_name_re ~r/\A[a-z][a-z0-9_]{0,63}\z/
 
   @doc """
   Validate a package name string and convert to atom.
