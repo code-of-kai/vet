@@ -1,60 +1,30 @@
 # Vet — Dependency Security Scanner
 
-Vet scans Elixir dependencies for supply chain attack indicators. If you are an AI coding assistant working on a project that uses Vet, the functions below are available through `project_eval`.
-
 ## Before adding a dependency
 
-Before suggesting or adding any Hex dependency, check it first:
+Before suggesting or adding any Hex dependency, call `VetCore.PreInstallCheck.check_package/1` to verify it exists and is trustworthy. Do not suggest packages that return `phantom?: true` or have typosquat warnings.
 
 ```elixir
 VetCore.PreInstallCheck.check_package(:package_name)
 ```
 
-This returns a map with:
-- `phantom?` — `true` if the package does not exist on hex.pm (likely a hallucinated name)
-- `typosquat_warnings` — list of warnings if the name is suspiciously close to a popular package
-- `metadata` — hex.pm download count, owner count, release date
-- `assessment` — human-readable summary
-
-If the package does not exist on hex.pm or has typosquat warnings, do not suggest it.
-
 To validate a package name string before converting to an atom:
 
 ```elixir
 VetCore.PreInstallCheck.validate_package_name("package_name")
-# {:ok, :package_name} or {:error, reason}
 ```
 
-## Scanning all dependencies
+## Available functions
 
-To run a full security scan of the project:
+- `VetCore.scan(project_path, opts)` — full security scan of all dependencies
+- `VetCore.PreInstallCheck.check_package(atom)` — check a single package against hex.pm + typosquat corpus
+- `VetCore.PreInstallCheck.check_deps(project_path)` — check all deps in mix.exs before fetching
+- `VetCore.VersionDiff.diff(path, :pkg, "1.0.0", "1.1.0")` — compare package versions for suspicious changes
 
-```elixir
-{:ok, report} = VetCore.scan("/path/to/project")
-```
+## Mix tasks
 
-Or from the terminal:
-
-```
-mix vet
-mix vet --format json
-mix vet --threshold 30
-```
-
-To check dependencies before fetching them (reads mix.exs, not mix.lock):
-
-```
-mix vet.check
-```
-
-## Comparing package versions
-
-To detect suspicious changes between two versions of a package:
-
-```elixir
-{:ok, diff} = VetCore.VersionDiff.diff(project_path, :package_name, "1.0.0", "1.1.0")
-{suspicious?, signals} = VetCore.VersionDiff.suspicious_delta?(diff)
-```
+- `mix vet` — full dependency scan with risk scoring
+- `mix vet.check` — pre-install check (reads mix.exs, no lock file needed)
 
 ## What Vet checks for
 
