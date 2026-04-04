@@ -166,10 +166,12 @@ defmodule VetCore.AST.Walker do
 
   # --- alias tracking ---
 
-  defp track_alias([{:__aliases__, _, segments}], state) do
+  defp track_alias([{:__aliases__, _, [_ | _] = segments}], state) do
     short = List.last(segments)
     put_in(state, [:aliases, short], segments)
   end
+
+  defp track_alias([{:__aliases__, _, []}], state), do: state
 
   defp track_alias([{:__aliases__, _, segments}, [as: {:__aliases__, _, [short]}]], state) do
     put_in(state, [:aliases, short], segments)

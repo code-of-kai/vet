@@ -232,6 +232,8 @@ defmodule VetCore.Checks.Obfuscation do
   # ---------- Helpers ----------
 
   @doc false
+  def shannon_entropy(<<>>), do: 0.0
+
   def shannon_entropy(string) do
     bytes = :binary.bin_to_list(string)
     len = length(bytes)
@@ -250,8 +252,14 @@ defmodule VetCore.Checks.Obfuscation do
   end
 
   defp natural_language?(str) do
-    space_ratio = (str |> String.graphemes() |> Enum.count(&(&1 == " "))) / String.length(str)
-    space_ratio > 0.10
+    len = String.length(str)
+
+    if len == 0 do
+      false
+    else
+      space_count = str |> String.graphemes() |> Enum.count(&(&1 == " "))
+      space_count / len > 0.10
+    end
   end
 
   defp find_string_line(source, str) do
