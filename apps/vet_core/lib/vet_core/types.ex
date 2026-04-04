@@ -10,7 +10,8 @@ defmodule VetCore.Types do
       :hash,
       :source,
       :children,
-      direct?: true
+      direct?: true,
+      depth: 1
     ]
 
     @type source :: :hex | {:git, String.t()} | {:path, String.t()}
@@ -21,7 +22,8 @@ defmodule VetCore.Types do
             hash: String.t() | nil,
             source: source(),
             direct?: boolean(),
-            children: [atom()] | nil
+            children: [atom()] | nil,
+            depth: pos_integer()
           }
   end
 
@@ -118,14 +120,16 @@ defmodule VetCore.Types do
       :project_path,
       :timestamp,
       :summary,
-      dependency_reports: []
+      dependency_reports: [],
+      allowlist_notes: []
     ]
 
     @type t :: %__MODULE__{
             project_path: String.t(),
             timestamp: DateTime.t(),
             dependency_reports: [DependencyReport.t()],
-            summary: map()
+            summary: map(),
+            allowlist_notes: [map()]
           }
   end
 end

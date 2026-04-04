@@ -71,7 +71,8 @@ defmodule VetCore.Scorer do
       downloads_penalty(meta.downloads) +
       recency_penalty(meta.latest_release_date) +
       owner_penalty(meta.owner_count) +
-      description_penalty(meta.description)
+      description_penalty(meta.description) +
+      depth_penalty(dependency)
   end
 
   defp source_penalty(%{source: {:git, _}}), do: 10
@@ -101,6 +102,10 @@ defmodule VetCore.Scorer do
   defp description_penalty(nil), do: 5
   defp description_penalty(""), do: 5
   defp description_penalty(_), do: 0
+
+  defp depth_penalty(%{depth: d}) when d >= 5, do: 10
+  defp depth_penalty(%{depth: d}) when d >= 3, do: 5
+  defp depth_penalty(_), do: 0
 
   defp apply_popularity_adjustment(score, nil), do: score
 

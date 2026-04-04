@@ -7,6 +7,7 @@ defmodule VetReporter.Terminal do
     IO.puts("")
     render_header(report)
     render_dependency_reports(report.dependency_reports)
+    render_allowlist_notes(report.allowlist_notes)
     render_summary(report.summary)
     IO.puts("")
   end
@@ -33,7 +34,7 @@ defmodule VetReporter.Terminal do
     IO.puts("")
 
     IO.puts(
-      "  #{risk_badge(report.risk_level)} #{IO.ANSI.bright()}#{report.dependency.name}#{IO.ANSI.reset()} #{report.dependency.version || "?"} — score: #{report.risk_score}"
+      "  #{risk_badge(report.risk_level)} #{IO.ANSI.bright()}#{report.dependency.name}#{IO.ANSI.reset()} #{report.dependency.version || "?"}#{depth_tag(report.dependency)} — score: #{report.risk_score}"
     )
   end
 
@@ -41,11 +42,15 @@ defmodule VetReporter.Terminal do
     IO.puts("")
 
     IO.puts(
-      "  #{risk_badge(report.risk_level)} #{IO.ANSI.bright()}#{report.dependency.name}#{IO.ANSI.reset()} #{report.dependency.version || "?"} — score: #{report.risk_score}"
+      "  #{risk_badge(report.risk_level)} #{IO.ANSI.bright()}#{report.dependency.name}#{IO.ANSI.reset()} #{report.dependency.version || "?"}#{depth_tag(report.dependency)} — score: #{report.risk_score}"
     )
 
     Enum.each(report.findings, &render_finding/1)
   end
+
+  defp depth_tag(%{direct?: true}), do: ""
+  defp depth_tag(%{depth: d}) when d > 1, do: " #{IO.ANSI.faint()}(transitive, depth: #{d})#{IO.ANSI.reset()}"
+  defp depth_tag(_), do: ""
 
   defp render_finding(%Finding{} = f) do
     compile_tag = if f.compile_time?, do: " #{IO.ANSI.red()}[COMPILE-TIME]#{IO.ANSI.reset()}", else: ""
@@ -61,6 +66,31 @@ defmodule VetReporter.Terminal do
     if f.snippet do
       IO.puts("      #{IO.ANSI.faint()}#{String.trim(f.snippet)}#{IO.ANSI.reset()}")
     end
+  end
+
+  defp render_allowlist_notes([]), do: :ok
+  defp render_allowlist_notes(nil), do: :ok
+
+  defp render_allowlist_notes(notes) do
+    IO.puts("")
+    IO.puts(String.duplicate("─", 60))
+    IO.puts(IO.ANSI.bright() <> "Allowlist transparency" <> IO.ANSI.reset())
+    IO.puts(IO.ANSI.faint() <> "  Findings in transitive deps of allowlisted packages:" <> IO.ANSI.reset())
+
+    notes
+    |> Enum.group_by(& &1.package)
+    |> Enum.each(fn {package, entries} ->
+      IO.puts("")
+      IO.puts("  #{IO.ANSI.bright()}:#{package}#{IO.ANSI.reset()} is allowlisted, but:")
+
+      Enum.each(entries, fn entry ->
+        cats = entry.categories |> Enum.map(&to_string/1) |> Enum.join(", ")
+
+        IO.puts(
+          "    #{IO.ANSI.yellow()}→#{IO.ANSI.reset()} :#{entry.transitive_dep} has #{entry.finding_count} finding(s) (#{cats})"
+        )
+      end)
+    end)
   end
 
   defp render_summary(nil), do: :ok

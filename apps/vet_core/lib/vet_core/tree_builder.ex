@@ -15,9 +15,54 @@ defmodule VetCore.TreeBuilder do
         %Dependency{dep | children: children, direct?: direct?}
       end)
 
+    result = compute_depths(result)
+
     {:ok, result}
   rescue
     e -> {:error, "Failed to build dependency tree: #{Exception.message(e)}"}
+  end
+
+  @doc """
+  Compute dependency depth via BFS from direct deps.
+  Direct deps are depth 1, their children depth 2, and so on.
+  """
+  def compute_depths(deps) do
+    deps_by_name = Map.new(deps, &{&1.name, &1})
+
+    # Seed BFS with direct deps at depth 1
+    initial_queue =
+      deps
+      |> Enum.filter(& &1.direct?)
+      |> Enum.map(&{&1.name, 1})
+
+    depths = bfs_depths(initial_queue, deps_by_name, %{})
+
+    Enum.map(deps, fn dep ->
+      %{dep | depth: Map.get(depths, dep.name, 1)}
+    end)
+  end
+
+  defp bfs_depths([], _deps_by_name, visited), do: visited
+
+  defp bfs_depths([{name, depth} | rest], deps_by_name, visited) do
+    if Map.has_key?(visited, name) do
+      bfs_depths(rest, deps_by_name, visited)
+    else
+      visited = Map.put(visited, name, depth)
+
+      children =
+        case Map.get(deps_by_name, name) do
+          %{children: children} when is_list(children) -> children
+          _ -> []
+        end
+
+      new_entries =
+        children
+        |> Enum.reject(&Map.has_key?(visited, &1))
+        |> Enum.map(&{&1, depth + 1})
+
+      bfs_depths(rest ++ new_entries, deps_by_name, visited)
+    end
   end
 
   defp read_direct_deps(project_path) do
