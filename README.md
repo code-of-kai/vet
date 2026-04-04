@@ -100,19 +100,25 @@ You can extend it with a `.vet.exs` file in your project root:
 }
 ```
 
-## MCP integration
+## AI agent integration
 
-Vet exposes three tools via the [Model Context Protocol](https://modelcontextprotocol.io), integrated through [Tidewave](https://github.com/tidewave-ai/tidewave_phoenix):
+Vet ships with an `AGENTS.md` that tells AI coding assistants how to use its functions. If your project uses [Tidewave](https://github.com/tidewave-ai/tidewave_phoenix), agents can call Vet's functions through `project_eval` with zero configuration.
 
-  * `vet_check_package` — check a package *before* adding it as a dependency. Detects phantom packages, typosquats, and slopsquatting targets. Does not require the package to be installed.
+The key function for agents:
 
-  * `vet_scan_dependencies` — full project scan, returns JSON with risk scores and findings.
+```elixir
+VetCore.PreInstallCheck.check_package(:some_package)
+```
 
-  * `vet_diff_versions` — compare two versions of a package for suspicious changes, new findings, or profile shifts.
+This checks whether a package exists on hex.pm, detects typosquats and slopsquatting targets, and returns metadata signals — all before the package is installed. An AI assistant that calls this before suggesting a dependency can intercept slopsquatting at the point of recommendation rather than after installation.
 
-This means an AI coding assistant connected to your running application can verify that a package exists and is trustworthy before suggesting it — intercepting slopsquatting at the point of recommendation rather than after installation.
+Other functions available through `project_eval`:
 
-To enable it, add Tidewave to your Phoenix endpoint (see [Tidewave's installation guide](https://hexdocs.pm/tidewave/installation.html)). Vet's tools register automatically on application start.
+  * `VetCore.scan(path)` — full project scan with risk scores and findings
+  * `VetCore.VersionDiff.diff(path, :pkg, "1.0.0", "1.1.0")` — compare package versions for suspicious changes
+  * `VetCore.PreInstallCheck.check_deps(path)` — check all mix.exs dependencies at once
+
+See `AGENTS.md` for complete usage.
 
 ## Architecture
 
@@ -121,7 +127,7 @@ Vet is structured as an umbrella project:
   * `vet_core` — scanner, checks, AST walker, scoring, metadata fetching, typosquat detection
   * `vet_cli` — Mix tasks (`mix vet`, `mix vet.check`)
   * `vet_reporter` — output formatting (terminal, JSON, diagnostics)
-  * `vet_mcp` — MCP tool definitions and Tidewave integration
+  * `vet_mcp` — tool definitions for programmatic access
   * `vet_service` — persistence layer for scan history and community attestations
 
 ## Limitations

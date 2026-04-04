@@ -77,23 +77,4 @@ defmodule VetMcpTest do
     end
   end
 
-  describe "register/0" do
-    test "returns error when Tidewave is not available" do
-      assert {:error, :tidewave_not_loaded} = VetMcp.register()
-    end
-  end
-
-  describe "tidewave_tools/0" do
-    test "returns 3 tool maps in Tidewave format" do
-      tools = VetMcp.tidewave_tools()
-      assert length(tools) == 3
-
-      for tool <- tools do
-        assert is_binary(tool.name)
-        assert is_binary(tool.description)
-        assert is_map(tool.inputSchema)
-        assert is_function(tool.callback, 1)
-      end
-    end
-  end
 end

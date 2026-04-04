@@ -38,17 +38,12 @@ defmodule VetMcp.Tools.DiffPackageVersions do
         %{"package" => name, "from_version" => from_ver, "to_version" => to_ver},
         _context
       ) do
-    package_atom =
-      try do
-        String.to_existing_atom(name)
-      rescue
-        ArgumentError -> nil
-      end
+    case VetCore.PreInstallCheck.validate_package_name(name) do
+      {:ok, package_atom} ->
+        execute_diff(package_atom, name, from_ver, to_ver)
 
-    if is_nil(package_atom) do
-      {:error, "Unknown package: #{name}. Package must exist in deps/."}
-    else
-      execute_diff(package_atom, name, from_ver, to_ver)
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
