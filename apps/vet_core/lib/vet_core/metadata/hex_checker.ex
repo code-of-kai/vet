@@ -36,13 +36,15 @@ defmodule VetCore.Metadata.HexChecker do
     end
   end
 
-  defp parse_hex_response(data) do
+  @doc false
+  def parse_hex_response(data) do
     downloads = get_in(data, ["downloads", "all"]) || 0
 
     latest_release =
-      data
-      |> Map.get("releases", [])
-      |> List.first()
+      case Map.get(data, "releases") do
+        releases when is_list(releases) -> List.first(releases)
+        _ -> nil
+      end
 
     latest_version = latest_release && Map.get(latest_release, "version")
 

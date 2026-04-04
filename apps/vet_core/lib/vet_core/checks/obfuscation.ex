@@ -231,7 +231,8 @@ defmodule VetCore.Checks.Obfuscation do
 
   # ---------- Helpers ----------
 
-  defp shannon_entropy(string) do
+  @doc false
+  def shannon_entropy(string) do
     bytes = :binary.bin_to_list(string)
     len = length(bytes)
 
