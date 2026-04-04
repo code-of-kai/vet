@@ -53,6 +53,8 @@ defmodule VetCore.Types do
             | :shady_links
             | :compiler_hooks
             | :dos_atom_exhaustion
+            | :metadata
+            | :phantom_package
 
     @type t :: %__MODULE__{
             dep_name: atom(),

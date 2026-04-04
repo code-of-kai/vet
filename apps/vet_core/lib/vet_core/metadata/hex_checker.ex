@@ -24,7 +24,7 @@ defmodule VetCore.Metadata.HexChecker do
         {:ok, parse_hex_response(body)}
 
       {:ok, %{status: 404}} ->
-        {:error, "Package #{package_name} not found on hex.pm"}
+        {:error, :not_found}
 
       {:ok, %{status: status}} ->
         Logger.warning("Hex API returned #{status} for #{package_name}")

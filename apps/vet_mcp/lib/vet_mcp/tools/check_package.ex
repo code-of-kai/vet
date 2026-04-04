@@ -7,8 +7,9 @@ defmodule VetMcp.Tools.CheckPackage do
 
   @impl true
   def description do
-    "Check a specific Hex package for security concerns before adding it as a dependency. " <>
-      "Useful when an AI assistant is about to suggest adding a dependency."
+    "Check a Hex package for security concerns BEFORE adding it as a dependency. " <>
+      "Detects phantom packages (don't exist on hex.pm), typosquats, slopsquatting targets, " <>
+      "and low-adoption packages. Does not require the package to be installed."
   end
 
   @impl true
@@ -19,7 +20,7 @@ defmodule VetMcp.Tools.CheckPackage do
       properties: %{
         package: %{
           type: "string",
-          description: "Package name on hex.pm"
+          description: "Package name to check (does not need to be installed)"
         },
         version: %{
           type: "string",
@@ -31,105 +32,43 @@ defmodule VetMcp.Tools.CheckPackage do
 
   @impl true
   def execute(%{"package" => name} = params, _context) do
-    package_atom =
-      try do
-        String.to_existing_atom(name)
-      rescue
-        ArgumentError -> nil
-      end
+    case VetCore.PreInstallCheck.validate_package_name(name) do
+      {:ok, package_atom} ->
+        result = VetCore.PreInstallCheck.check_package(package_atom)
 
-    if is_nil(package_atom) do
-      {:error, "Unknown package: #{name}. Package must exist in deps/."}
-    else
-      execute_check(package_atom, name, params)
+        version = Map.get(params, "version", result.metadata && result.metadata.latest_version)
+
+        output = %{
+          package: name,
+          version: version,
+          phantom: result.phantom?,
+          metadata:
+            if result.metadata do
+              %{
+                downloads: result.metadata.downloads,
+                latest_version: result.metadata.latest_version,
+                latest_release_date:
+                  result.metadata.latest_release_date &&
+                    DateTime.to_iso8601(result.metadata.latest_release_date),
+                owner_count: result.metadata.owner_count,
+                description: result.metadata.description,
+                retired: result.metadata.retired?
+              }
+            else
+              nil
+            end,
+          typosquat_warnings: result.typosquat_warnings,
+          assessment: result.assessment
+        }
+
+        {:ok, Jason.encode!(output, pretty: true)}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
   def execute(_params, _context) do
     {:error, "Missing required parameter: package"}
-  end
-
-  defp execute_check(package_atom, name, params) do
-    metadata =
-      case VetCore.Metadata.HexChecker.fetch_metadata(package_atom) do
-        {:ok, meta} -> meta
-        {:error, _} -> %VetCore.Types.HexMetadata{}
-      end
-
-    version = Map.get(params, "version", metadata.latest_version)
-
-    dep = %VetCore.Types.Dependency{
-      name: package_atom,
-      source: :hex,
-      version: version
-    }
-
-    typosquat_findings = VetCore.Metadata.TyposquatDetector.check_dep(dep)
-
-    result = %{
-      package: name,
-      version: version,
-      metadata: %{
-        downloads: metadata.downloads,
-        latest_version: metadata.latest_version,
-        latest_release_date:
-          metadata.latest_release_date && DateTime.to_iso8601(metadata.latest_release_date),
-        owner_count: metadata.owner_count,
-        description: metadata.description,
-        retired: metadata.retired?
-      },
-      typosquat_warnings:
-        Enum.map(typosquat_findings, fn f -> f.description end),
-      assessment: assess(metadata, typosquat_findings)
-    }
-
-    {:ok, Jason.encode!(result, pretty: true)}
-  end
-
-  defp assess(metadata, typosquat_findings) do
-    warnings = []
-
-    warnings =
-      if metadata.downloads && metadata.downloads < 1000,
-        do: ["Low download count (#{metadata.downloads})" | warnings],
-        else: warnings
-
-    warnings =
-      if metadata.owner_count == 1,
-        do: ["Single package owner" | warnings],
-        else: warnings
-
-    warnings =
-      if metadata.retired?,
-        do: ["Package is retired" | warnings],
-        else: warnings
-
-    warnings =
-      if metadata.description in [nil, ""],
-        do: ["No package description" | warnings],
-        else: warnings
-
-    warnings =
-      if typosquat_findings != [],
-        do: ["Possible typosquat" | warnings],
-        else: warnings
-
-    warnings =
-      case metadata.latest_release_date do
-        %DateTime{} = dt ->
-          days_ago = DateTime.diff(DateTime.utc_now(), dt, :day)
-
-          if days_ago < 7,
-            do: ["Latest version published #{days_ago} days ago" | warnings],
-            else: warnings
-
-        _ ->
-          warnings
-      end
-
-    case length(warnings) do
-      0 -> "No concerns identified."
-      _ -> "Warnings: " <> Enum.join(warnings, "; ")
-    end
   end
 end

@@ -50,7 +50,7 @@ defmodule VetMcp do
   end
 
   @doc """
-  Register all Vet tools with Tidewave by injecting into its ETS tool table.
+  Register all Vet tools with Tidewave.
 
   Call this after Tidewave has started (e.g., in your Application.start/2).
   Returns :ok or {:error, reason}.
@@ -58,42 +58,7 @@ defmodule VetMcp do
   def register do
     if Code.ensure_loaded?(Tidewave.MCP.Server) do
       try do
-        {existing_tools, existing_dispatch} = Tidewave.MCP.Server.tools_and_dispatch()
-
-        # Guard against double-registration
-        already_registered? = Enum.any?(existing_tools, fn t -> t.name == "vet_scan_dependencies" end)
-
-        if already_registered? do
-          throw(:already_registered)
-        end
-
-        vet_tools = tidewave_tools()
-        vet_dispatch = Map.new(vet_tools, fn tool -> {tool.name, tool.callback} end)
-
-        merged_tools = existing_tools ++ vet_tools
-        merged_dispatch = Map.merge(existing_dispatch, vet_dispatch)
-
-        # The :tidewave_tools ETS table is owned by the Tidewave.MCP supervisor.
-        # Only the owner can write. We ask the owner to do the insert for us.
-        owner_pid = :ets.info(:tidewave_tools, :owner)
-
-        ref = make_ref()
-        caller = self()
-
-        # Execute the insert in the owner's context via :sys.replace_state,
-        # which runs a callback in the target process. We use it as a side-effect
-        # vehicle — the state itself is returned unchanged.
-        :sys.replace_state(owner_pid, fn state ->
-          :ets.insert(:tidewave_tools, {:tools, {merged_tools, merged_dispatch}})
-          send(caller, {:vet_registered, ref})
-          state
-        end)
-
-        receive do
-          {:vet_registered, ^ref} -> :ok
-        after
-          5_000 -> {:error, :registration_timeout}
-        end
+        register_impl()
       rescue
         e -> {:error, Exception.message(e)}
       catch
@@ -101,6 +66,54 @@ defmodule VetMcp do
       end
     else
       {:error, :tidewave_not_loaded}
+    end
+  end
+
+  # TODO: Switch to the clean API once tidewave-ai/tidewave_phoenix#237 is merged.
+  #
+  # PR: https://github.com/tidewave-ai/tidewave_phoenix/pull/237
+  # Adds Tidewave.MCP.Server.register_tools/1 — a public function for
+  # third-party tool registration. When available, this entire function
+  # collapses to:
+  #
+  #     defp register_impl do
+  #       Tidewave.MCP.Server.register_tools(tidewave_tools())
+  #     end
+  #
+  # Until then, we inject into the ETS table via :sys.replace_state on
+  # the owner process. This works but couples to Tidewave internals
+  # (ETS table name, tuple format, owner process identity).
+  defp register_impl do
+    {existing_tools, _existing_dispatch} = Tidewave.MCP.Server.tools_and_dispatch()
+
+    # Guard against double-registration
+    if Enum.any?(existing_tools, fn t -> t.name == "vet_scan_dependencies" end) do
+      throw(:already_registered)
+    end
+
+    vet_tools = tidewave_tools()
+    vet_dispatch = Map.new(vet_tools, fn tool -> {tool.name, tool.callback} end)
+
+    merged_tools = existing_tools ++ vet_tools
+    merged_dispatch =
+      existing_tools
+      |> Map.new(fn tool -> {tool.name, tool.callback} end)
+      |> Map.merge(vet_dispatch)
+
+    owner_pid = :ets.info(:tidewave_tools, :owner)
+    ref = make_ref()
+    caller = self()
+
+    :sys.replace_state(owner_pid, fn state ->
+      :ets.insert(:tidewave_tools, {:tools, {merged_tools, merged_dispatch}})
+      send(caller, {:vet_registered, ref})
+      state
+    end)
+
+    receive do
+      {:vet_registered, ^ref} -> :ok
+    after
+      5_000 -> {:error, :registration_timeout}
     end
   end
 end
