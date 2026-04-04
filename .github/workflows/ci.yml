@@ -50,5 +50,11 @@ jobs:
       - name: Run tests
         run: mix test
 
+      - name: Audit dependencies
+        run: mix deps.audit
+
+      - name: Sobelow
+        run: mix sobelow --config
+
       - name: Self-scan
         run: mix vet --skip-hex --threshold 80

@@ -16,6 +16,9 @@ defmodule Vet.MixProject do
   #
   # Run "mix help deps" for examples and options.
   defp deps do
-    []
+    [
+      {:mix_audit, "~> 2.1", only: :dev, runtime: false},
+      {:sobelow, "~> 0.13", only: :dev, runtime: false}
+    ]
   end
 end
