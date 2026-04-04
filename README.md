@@ -132,10 +132,14 @@ Vet is structured as an umbrella project:
 
 ## Limitations
 
+  * **Vet reduces risk. It does not eliminate it.** A clean scan is not proof of safety. Do not use Vet as the sole basis for trusting a dependency.
   * Elixir/Erlang only. Does not scan npm, Python, or other ecosystems.
-  * Static analysis. Cannot detect malicious behavior hidden behind runtime conditionals or encrypted payloads that are decrypted at a later stage.
+  * Static analysis. Cannot detect malicious behavior hidden behind runtime conditionals, encrypted payloads decrypted at a later stage, or code loaded dynamically from external sources.
   * The typosquat corpus is a static list of ~200 popular packages. Packages outside this list will not trigger proximity checks.
   * Metadata checks require network access to hex.pm. Use `--skip-hex` when running offline.
+  * Vet trusts hex.pm API responses. If hex.pm itself is compromised, metadata-based checks become unreliable.
+
+See [SECURITY.md](SECURITY.md) for Vet's own attack surface and trust boundaries.
 
 ## License
 
