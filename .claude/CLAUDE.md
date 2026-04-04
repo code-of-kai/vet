@@ -41,7 +41,7 @@ Compile-time findings score significantly higher because they execute during `mi
 
 ## Architecture
 
-Umbrella project with apps: `vet_core` (scanner/checks/scoring), `vet_cli` (mix tasks), `vet_reporter` (output formatting), `vet_mcp` (tool definitions), `vet_service` (persistence).
+Umbrella project with apps: `vet_core` (scanner/checks/scoring), `vet_cli` (mix tasks), `vet_reporter` (output formatting), `vet_service` (persistence).
 
 ## Running tests
 

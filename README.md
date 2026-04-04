@@ -127,7 +127,6 @@ Vet is structured as an umbrella project:
   * `vet_core` — scanner, checks, AST walker, scoring, metadata fetching, typosquat detection
   * `vet_cli` — Mix tasks (`mix vet`, `mix vet.check`)
   * `vet_reporter` — output formatting (terminal, JSON, diagnostics)
-  * `vet_mcp` — tool definitions for programmatic access
   * `vet_service` — persistence layer for scan history and community attestations
 
 ## Limitations
