@@ -181,17 +181,21 @@ defmodule VetCore.Property.TrustBoundaryPropertyTest do
     end
   end
 
-  # -- 5. Reserved word collision: real packages named like keywords --
+  # -- 5. Reserved word collision: real packages named like dep tuple keyword opts --
+  #
+  # After scoping extraction to the deps function body (fix for Phoenix alias bug),
+  # the only words that get filtered are dep tuple options like :only, :runtime,
+  # :optional, :path, :git, :github. Package names that match dep tuple option keys
+  # cannot be detected — but this is a much smaller collision set than before.
 
   property "invariant: extract_dep_names filters are documented and bounded" do
-    # These are atoms that are BOTH valid hex package names AND in the filter list.
-    # If someone publishes a package with one of these names, Vet can't see it.
-    # This test documents the collision set.
-    reserved_that_are_valid_package_names = ~w(
-      app version elixir name env hex path git runtime optional
+    # Names that ARE filtered (collisions with dep tuple keyword opts)
+    cannot_be_detected = ~w(
+      only runtime optional override path git github
+      hex organization repo env compile_env app
     )a
 
-    for name <- reserved_that_are_valid_package_names do
+    for name <- cannot_be_detected do
       mix_exs = """
       defmodule Test.MixProject do
         use Mix.Project
@@ -201,7 +205,7 @@ defmodule VetCore.Property.TrustBoundaryPropertyTest do
 
       result = VetCore.TreeBuilder.extract_dep_names(mix_exs)
 
-      # These ARE filtered — this is a known limitation, not a bug.
+      # These ARE filtered — known limitation, but a small collision set.
       # But the test proves we know about it.
       refute name in result,
              "Expected :#{name} to be filtered (known limitation), but it appeared in results"

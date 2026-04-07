@@ -88,6 +88,122 @@ defmodule VetCore.TreeBuilderTest do
     assert dep.direct? == false
   end
 
+  describe "extract_dep_names/1" do
+    test "ignores aliases (regression: Phoenix mix.exs false positives)" do
+      # Bug report from a real Phoenix+Ecto project user:
+      # mix aliases like `precommit`, `setup`, `ecto.setup` were being
+      # treated as if they were package dependencies, then reported as
+      # CRITICAL phantom packages because they don't exist on hex.pm.
+      mix_exs = """
+      defmodule MyApp.MixProject do
+        use Mix.Project
+
+        def project do
+          [
+            app: :my_app,
+            version: "0.1.0",
+            elixir: "~> 1.18",
+            aliases: aliases(),
+            deps: deps()
+          ]
+        end
+
+        defp deps do
+          [
+            {:phoenix, "~> 1.7.0"},
+            {:phoenix_ecto, "~> 4.4"},
+            {:ecto_sql, "~> 3.10"},
+            {:postgrex, ">= 0.0.0"},
+            {:phoenix_live_view, "~> 1.0", only: :dev},
+            {:bandit, "~> 1.5"}
+          ]
+        end
+
+        defp aliases do
+          [
+            setup: ["deps.get", "ecto.setup", "assets.setup", "assets.build"],
+            "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
+            "ecto.reset": ["ecto.drop", "ecto.setup"],
+            test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+            precommit: ["compile --warnings-as-errors", "format", "test"]
+          ]
+        end
+      end
+      """
+
+      result = TreeBuilder.extract_dep_names(mix_exs)
+
+      # Real deps should be found, including the 3-tuple form with options
+      assert :phoenix in result
+      assert :phoenix_ecto in result
+      assert :ecto_sql in result
+      assert :postgrex in result
+      assert :phoenix_live_view in result
+      assert :bandit in result
+
+      # Alias names must NOT leak through
+      refute :setup in result
+      refute :precommit in result
+      refute :"ecto.setup" in result
+      refute :"ecto.reset" in result
+      refute :test in result
+
+      # Project metadata fields should not appear either
+      refute :app in result
+      refute :version in result
+      refute :elixir in result
+      refute :aliases in result
+      refute :deps in result
+    end
+
+    test "handles single-function modules (no __block__ wrapper)" do
+      # When a module has only one function, the AST is not wrapped in :__block__.
+      mix_exs = """
+      defmodule M.MixProject do
+        defp deps do
+          [{:jason, "~> 1.4"}]
+        end
+      end
+      """
+
+      assert [:jason] = TreeBuilder.extract_dep_names(mix_exs)
+    end
+
+    test "supports both def and defp deps definitions" do
+      # def deps is rare but valid.
+      mix_exs = """
+      defmodule M.MixProject do
+        use Mix.Project
+
+        def project do
+          [app: :m, deps: deps()]
+        end
+
+        def deps do
+          [{:phoenix, "~> 1.7"}]
+        end
+      end
+      """
+
+      assert [:phoenix] = TreeBuilder.extract_dep_names(mix_exs)
+    end
+
+    test "returns empty list when there is no deps function" do
+      mix_exs = """
+      defmodule M.MixProject do
+        use Mix.Project
+        def project, do: [app: :m]
+      end
+      """
+
+      assert [] = TreeBuilder.extract_dep_names(mix_exs)
+    end
+
+    test "returns empty list for malformed source" do
+      assert [] = TreeBuilder.extract_dep_names("this is not elixir code {{{")
+    end
+  end
+
   test "marks non-direct deps as direct?: false (baseline comparison)", %{tmp_dir: tmp_dir} do
     File.write!(Path.join(tmp_dir, "mix.exs"), """
     defmodule MyProject.MixProject do

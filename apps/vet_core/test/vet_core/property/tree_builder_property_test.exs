@@ -104,4 +104,51 @@ defmodule VetCore.Property.TreeBuilderPropertyTest do
       end)
     end
   end
+
+  property "invariant: extract_dep_names is not fooled by aliases" do
+    check all(
+            dep_names <- list_of(package_name_atom(), min_length: 1, max_length: 4),
+            alias_names <- list_of(package_name_atom(), min_length: 1, max_length: 4),
+            max_runs: 50
+          ) do
+      unique_deps = Enum.uniq(dep_names)
+      unique_aliases = Enum.uniq(alias_names) -- unique_deps
+
+      deps_code =
+        unique_deps
+        |> Enum.map(fn name -> "{:#{name}, \"~> 1.0\"}" end)
+        |> Enum.join(", ")
+
+      aliases_code =
+        unique_aliases
+        |> Enum.map(fn name -> "#{name}: [\"some.task\"]" end)
+        |> Enum.join(", ")
+
+      mix_exs = """
+      defmodule Test.MixProject do
+        use Mix.Project
+
+        def project do
+          [app: :test, version: "0.1.0", aliases: aliases(), deps: deps()]
+        end
+
+        defp deps, do: [#{deps_code}]
+        defp aliases, do: [#{aliases_code}]
+      end
+      """
+
+      result = TreeBuilder.extract_dep_names(mix_exs)
+
+      # Every real dep must be present
+      for dep <- unique_deps do
+        assert dep in result, "Real dep #{dep} missing from result: #{inspect(result)}"
+      end
+
+      # No alias name should leak through
+      for alias_name <- unique_aliases do
+        refute alias_name in result,
+               "Alias name #{alias_name} leaked into deps result: #{inspect(result)}"
+      end
+    end
+  end
 end

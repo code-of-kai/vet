@@ -3,6 +3,14 @@ defmodule VetCore.TreeBuilder do
 
   alias VetCore.Types.Dependency
 
+  # Keyword options that appear inside dep tuples like
+  # {:phoenix, "~> 1.7", only: :dev, runtime: false, optional: true}
+  @dep_keyword_opts ~w(
+    only runtime optional override manager in_umbrella path git github
+    organization repo hex env compile_env app sparse system_env targets
+    branch tag ref submodules subdir
+  )a
+
   def build(project_path, deps) do
     direct_deps = read_direct_deps(project_path)
 
@@ -83,6 +91,13 @@ defmodule VetCore.TreeBuilder do
     end
   end
 
+  @doc """
+  Extract dependency names from a mix.exs file's source.
+
+  Walks ONLY the body of the `deps` function, not the entire module AST.
+  This avoids false positives from `aliases`, `releases`, or any other
+  function that returns keyword lists.
+  """
   def extract_dep_names(mix_exs_content) do
     case Code.string_to_quoted(mix_exs_content) do
       {:ok, ast} -> find_deps_in_ast(ast)
@@ -91,26 +106,65 @@ defmodule VetCore.TreeBuilder do
   end
 
   defp find_deps_in_ast(ast) do
-    {_ast, dep_names} =
-      Macro.prewalk(ast, [], fn
-        # Match 2-tuple dep declarations: {:dep_name, "~> 1.0"} or {:dep_name, opts}
-        {name, _} = node, acc when is_atom(name) ->
-          {node, [name | acc]}
+    case extract_function_body(ast, :deps) do
+      nil ->
+        []
 
-        node, acc ->
-          {node, acc}
-      end)
-
-    dep_names
-    |> Enum.uniq()
-    |> Enum.reject(&(&1 in ~w(
-      deps dep project application do end def defp defmodule use if else true false nil
-      app version elixir name description source_url homepage_url
-      build_path config_path deps_path lockfile elixirc_paths compilers
-      start_permanent consolidate_protocols aliases package links files
-      licenses maintainers extra_applications mod env
-      only runtime optional override manager in_umbrella path git github
-      organization repo hex
-    )a))
+      deps_body ->
+        deps_body
+        |> collect_dep_names([])
+        |> Enum.uniq()
+    end
   end
+
+  # Walk the deps function body collecting dep names from both forms:
+  #   {:phoenix, "~> 1.7"}                          — 2-tuple literal
+  #   {:phoenix, "~> 1.7", only: :dev}              — 3-tuple, AST: {:{}, _, [name, ...]}
+  defp collect_dep_names(ast, acc) when is_list(ast) do
+    Enum.reduce(ast, acc, &collect_dep_names/2)
+  end
+
+  defp collect_dep_names({name, version}, acc)
+       when is_atom(name) and is_binary(version) and name not in @dep_keyword_opts do
+    [name | acc]
+  end
+
+  defp collect_dep_names({:{}, _meta, [name, version | _opts]}, acc)
+       when is_atom(name) and is_binary(version) and name not in @dep_keyword_opts do
+    [name | acc]
+  end
+
+  defp collect_dep_names(_other, acc), do: acc
+
+  # Find a top-level def/defp by name and return its body.
+  # Handles single-clause modules and multi-clause __block__ modules.
+  defp extract_function_body(ast, func_name) do
+    case ast do
+      {:defmodule, _meta, [_module, [do: module_body]]} ->
+        extract_from_module_body(module_body, func_name)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp extract_from_module_body({:__block__, _meta, clauses}, func_name) do
+    Enum.find_value(clauses, nil, fn clause ->
+      match_function_clause(clause, func_name)
+    end)
+  end
+
+  defp extract_from_module_body(single_clause, func_name) do
+    match_function_clause(single_clause, func_name)
+  end
+
+  defp match_function_clause(
+         {form, _meta, [{name, _fn_meta, _args}, [do: fn_body]]},
+         func_name
+       )
+       when form in [:def, :defp] and name == func_name do
+    fn_body
+  end
+
+  defp match_function_clause(_clause, _func_name), do: nil
 end
