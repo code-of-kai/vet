@@ -54,7 +54,9 @@ defmodule VetCore.Metadata.HexChecker do
     latest_release = List.first(releases)
     latest_version = latest_release && Map.get(latest_release, "version")
 
-    previous_version = find_previous_version(releases, current_version || latest_version)
+    effective_version = current_version || latest_version
+    previous_version = find_previous_version(releases, effective_version)
+    lookback_version = find_lookback_version(releases, effective_version, 10)
 
     latest_release_date =
       with %{"inserted_at" => date_str} <- latest_release,
@@ -81,6 +83,7 @@ defmodule VetCore.Metadata.HexChecker do
       latest_version: latest_version,
       latest_release_date: latest_release_date,
       previous_version: previous_version,
+      lookback_version: lookback_version,
       owner_count: owners_count,
       description: Map.get(data, "meta", %{}) |> Map.get("description"),
       retired?: retired?
@@ -104,6 +107,32 @@ defmodule VetCore.Metadata.HexChecker do
   end
 
   def find_previous_version(_, _), do: nil
+
+  @doc """
+  Find the version N releases before `current_version` in the releases list.
+  Used for lookback diffing to catch gradual introduction of malicious code
+  across multiple small versions.
+  """
+  def find_lookback_version(releases, nil, _n), do: nil
+
+  def find_lookback_version(releases, current_version, n) when is_list(releases) and n > 0 do
+    versions =
+      releases
+      |> Enum.map(fn
+        %{"version" => v} when is_binary(v) -> v
+        _ -> nil
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    case Enum.find_index(versions, &(&1 == current_version)) do
+      nil -> nil
+      idx ->
+        target_idx = idx + n
+        if target_idx < length(versions), do: Enum.at(versions, target_idx), else: List.last(versions)
+    end
+  end
+
+  def find_lookback_version(_, _, _), do: nil
 
   # Find the element immediately after `target` in the list.
   # Since releases are newest-first, the element after the current

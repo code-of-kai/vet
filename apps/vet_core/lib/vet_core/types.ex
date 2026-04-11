@@ -80,6 +80,7 @@ defmodule VetCore.Types do
       :latest_version,
       :latest_release_date,
       :previous_version,
+      :lookback_version,
       :owner_count,
       :description,
       retired?: false
@@ -90,6 +91,7 @@ defmodule VetCore.Types do
             latest_version: String.t() | nil,
             latest_release_date: DateTime.t() | nil,
             previous_version: String.t() | nil,
+            lookback_version: String.t() | nil,
             owner_count: non_neg_integer() | nil,
             description: String.t() | nil,
             retired?: boolean()

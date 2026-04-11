@@ -209,7 +209,9 @@ defmodule VetCore.Scanner do
       if opts[:skip_diff] == true or dep.source != :hex do
         {nil, []}
       else
-        run_version_diff(dep, meta, project_path)
+        {step_diff, step_findings} = run_version_diff(dep, meta, project_path)
+        lookback_findings = run_lookback_diff(dep, meta, project_path)
+        {step_diff, step_findings ++ lookback_findings}
       end
 
     # Combine: allowlist-filtered findings + version diff findings (unfiltered)
@@ -246,6 +248,57 @@ defmodule VetCore.Scanner do
       end
     else
       {nil, []}
+    end
+  end
+
+  # Lookback diff: compare current version against N releases ago.
+  # Catches gradual introduction of malicious code across multiple versions
+  # where no single step looks suspicious but the aggregate does.
+  defp run_lookback_diff(dep, meta, project_path) do
+    lookback_version =
+      case meta do
+        %{lookback_version: v} when is_binary(v) -> v
+        _ -> nil
+      end
+
+    prev_version =
+      case meta do
+        %{previous_version: v} when is_binary(v) -> v
+        _ -> nil
+      end
+
+    # Only run if lookback is different from the immediate predecessor
+    # (otherwise we'd duplicate findings)
+    if lookback_version && dep.version &&
+       lookback_version != dep.version &&
+       lookback_version != prev_version do
+      case VetCore.VersionDiff.diff(project_path, dep.name, lookback_version, dep.version) do
+        {:ok, diff} ->
+          {suspicious?, signals} = VetCore.VersionDiff.suspicious_delta?(diff)
+
+          if suspicious? do
+            Enum.map(signals, fn signal ->
+              %VetCore.Types.Finding{
+                dep_name: dep.name,
+                file_path: "version_diff_lookback",
+                line: 1,
+                check_id: :version_lookback,
+                category: :version_transition,
+                severity: :warning,
+                compile_time?: false,
+                description:
+                  "Lookback #{lookback_version} to #{dep.version} (across multiple releases): #{signal}"
+              }
+            end)
+          else
+            []
+          end
+
+        {:error, _} ->
+          []
+      end
+    else
+      []
     end
   end
 
