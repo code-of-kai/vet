@@ -38,6 +38,7 @@ Options:
   * `--format`, `-f` — output format: `terminal` (default), `json`, `diagnostics`
   * `--threshold`, `-t` — exit with error if any dependency's risk score meets or exceeds this value (default: 50)
   * `--skip-hex` — skip hex.pm metadata checks (useful offline or in CI without network)
+  * `--no-diff` — skip automatic version diffing (faster scans, no network fetch of previous versions)
   * `--verbose`, `-v` — verbose output
 
 ### Pre-install check
@@ -53,6 +54,16 @@ Run this *before* `mix deps.get`. It reads your `mix.exs` directly — no lock f
   * Is it recently published with very low adoption? (metadata signals)
 
 If any dependency does not exist on hex.pm, the task exits with an error.
+
+### Version diffing
+
+Vet automatically compares each dependency against its previous version on Hex. Hex retains every published version permanently, so this works regardless of what you previously had installed.
+
+If a version transition introduces suspicious patterns (new files outside of tests, increased security findings, or a shift in the package's security profile), Vet flags it as a `[VERSION DIFF]` finding. These findings bypass the allowlist. The allowlist says "we trust this package's existing behavior." A version diff says "the behavior changed."
+
+This is how Vet catches a compromised update to an allowlisted package. If a trusted dependency pushes a new version that adds compile-time credential theft, the diff against the previous version surfaces it even though the package is allowlisted.
+
+Use `--no-diff` to disable version diffing for faster offline scans.
 
 ## What it checks
 
@@ -79,7 +90,7 @@ Each dependency receives a risk score (0–100) combining code findings and pack
 
 **Findings** — compile-time critical: +40, compile-time warning: +20, runtime critical: +15, runtime warning: +5, info: +1.
 
-**Metadata** — non-hex source (git/path): +10, downloads <100: +20, downloads <1000: +10, released in last 7 days: +15, single owner: +5, no description: +5.
+**Metadata** — non-hex source (git/path): +10, downloads <100: +20, downloads <1000: +10, released in last 7 days: +15, single owner: +5, no description: +5, dependency depth 3-4: +5, depth 5+: +10.
 
 **Popularity adjustment** — packages with >10M downloads: score ×0.3, >1M: score ×0.5. Widely adopted packages are less likely to be malicious; their findings are typically legitimate framework patterns.
 
@@ -87,7 +98,7 @@ Each dependency receives a risk score (0–100) combining code findings and pack
 
 ## Allowlist
 
-Many legitimate libraries trigger findings. Phoenix uses `@before_compile`, Ecto runs `Code.eval_quoted` for query compilation, Rustler executes system commands to build native code. Vet ships with a built-in allowlist covering ~50 common packages and their expected patterns.
+Many legitimate libraries trigger findings. Phoenix uses `@before_compile`, Ecto runs `Code.eval_quoted` for query compilation, Rustler executes system commands to build native code. Vet ships with a built-in allowlist covering the Phoenix 1.7+ ecosystem and common Elixir packages (~100 suppression rules).
 
 You can extend it with a `.vet.exs` file in your project root:
 
