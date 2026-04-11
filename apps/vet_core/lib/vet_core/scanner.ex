@@ -188,7 +188,7 @@ defmodule VetCore.Scanner do
     end
   end
 
-  defp run_checks_for_dep(dep, project_path, hex_metadata, _opts) do
+  defp run_checks_for_dep(dep, project_path, hex_metadata, opts) do
     all_findings =
       @checks
       |> Enum.flat_map(fn check_mod ->
@@ -199,14 +199,91 @@ defmodule VetCore.Scanner do
     filtered_findings = VetCore.Allowlist.filter_findings(all_findings, dep.name, project_path)
 
     meta = Map.get(hex_metadata, dep.name)
-    {risk_score, risk_level} = VetCore.Scorer.score(dep, filtered_findings, meta)
+
+    # Version diff: compare current version against predecessor.
+    # These findings BYPASS the allowlist — they represent version
+    # transition threats, not static patterns. The allowlist says
+    # "we trust what this package has always done." A version diff
+    # says "something changed."
+    {version_diff_result, version_diff_findings} =
+      if opts[:skip_diff] == true or dep.source != :hex do
+        {nil, []}
+      else
+        run_version_diff(dep, meta, project_path)
+      end
+
+    # Combine: allowlist-filtered findings + version diff findings (unfiltered)
+    combined_findings = filtered_findings ++ version_diff_findings
+
+    {risk_score, risk_level} = VetCore.Scorer.score(dep, combined_findings, meta)
 
     %DependencyReport{
       dependency: dep,
-      findings: filtered_findings,
+      findings: combined_findings,
       hex_metadata: meta,
       risk_score: risk_score,
-      risk_level: risk_level
+      risk_level: risk_level,
+      version_diff: version_diff_result
     }
+  end
+
+  defp run_version_diff(dep, meta, project_path) do
+    prev_version =
+      case meta do
+        %{previous_version: v} when is_binary(v) -> v
+        _ -> nil
+      end
+
+    if prev_version && dep.version && prev_version != dep.version do
+      case VetCore.VersionDiff.diff(project_path, dep.name, prev_version, dep.version) do
+        {:ok, diff} ->
+          {suspicious?, signals} = VetCore.VersionDiff.suspicious_delta?(diff)
+          findings = version_diff_findings(dep.name, prev_version, dep.version, suspicious?, signals)
+          {diff, findings}
+
+        {:error, _} ->
+          {nil, []}
+      end
+    else
+      {nil, []}
+    end
+  end
+
+  defp version_diff_findings(_dep_name, _prev, _curr, false, _signals), do: []
+
+  defp version_diff_findings(dep_name, prev_version, curr_version, true, signals) do
+    Enum.map(signals, fn signal ->
+      {severity, description} =
+        case signal do
+          :profile_shift ->
+            {:critical,
+             "Version transition #{prev_version} → #{curr_version}: security profile shift detected — " <>
+               "new categories of dangerous patterns appeared in this version"}
+
+          :unexpected_new_files ->
+            {:warning,
+             "Version transition #{prev_version} → #{curr_version}: unexpected new non-test files added"}
+
+          :findings_increased ->
+            {:warning,
+             "Version transition #{prev_version} → #{curr_version}: security findings increased " <>
+               "(more dangerous patterns than previous version)"}
+
+          other ->
+            {:warning,
+             "Version transition #{prev_version} → #{curr_version}: #{other}"}
+        end
+
+      %VetCore.Types.Finding{
+        dep_name: dep_name,
+        file_path: "version_diff",
+        line: 1,
+        check_id: :version_transition,
+        category: :version_transition,
+        severity: severity,
+        compile_time?: false,
+        description: description
+      }
+    end)
   end
 end

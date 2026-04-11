@@ -57,6 +57,7 @@ defmodule VetCore.Types do
             | :dos_atom_exhaustion
             | :metadata
             | :phantom_package
+            | :version_transition
 
     @type t :: %__MODULE__{
             dep_name: atom(),
@@ -78,6 +79,7 @@ defmodule VetCore.Types do
       :downloads,
       :latest_version,
       :latest_release_date,
+      :previous_version,
       :owner_count,
       :description,
       retired?: false
@@ -87,6 +89,7 @@ defmodule VetCore.Types do
             downloads: non_neg_integer() | nil,
             latest_version: String.t() | nil,
             latest_release_date: DateTime.t() | nil,
+            previous_version: String.t() | nil,
             owner_count: non_neg_integer() | nil,
             description: String.t() | nil,
             retired?: boolean()
@@ -100,6 +103,7 @@ defmodule VetCore.Types do
       :hex_metadata,
       :risk_score,
       :risk_level,
+      :version_diff,
       findings: []
     ]
 
@@ -110,7 +114,8 @@ defmodule VetCore.Types do
             findings: [Finding.t()],
             hex_metadata: HexMetadata.t() | nil,
             risk_score: non_neg_integer(),
-            risk_level: risk_level()
+            risk_level: risk_level(),
+            version_diff: map() | nil
           }
   end
 

@@ -52,6 +52,15 @@ defmodule VetReporter.Terminal do
   defp depth_tag(%{depth: d}) when d > 1, do: " #{IO.ANSI.faint()}(transitive, depth: #{d})#{IO.ANSI.reset()}"
   defp depth_tag(_), do: ""
 
+  defp render_finding(%Finding{category: :version_transition} = f) do
+    severity_color = severity_color(f.severity)
+
+    IO.puts(
+      "    #{severity_color}#{String.upcase(to_string(f.severity))}#{IO.ANSI.reset()} " <>
+        "#{IO.ANSI.cyan()}[VERSION DIFF]#{IO.ANSI.reset()} #{f.description}"
+    )
+  end
+
   defp render_finding(%Finding{} = f) do
     compile_tag = if f.compile_time?, do: " #{IO.ANSI.red()}[COMPILE-TIME]#{IO.ANSI.reset()}", else: ""
     severity_color = severity_color(f.severity)

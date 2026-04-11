@@ -64,6 +64,33 @@ defmodule VetCore.PreInstallCheck do
         []
       end
 
+    # Version diff: compare latest against its predecessor on Hex
+    version_diff_warnings =
+      if metadata && metadata.latest_version && metadata.previous_version do
+        case VetCore.VersionDiff.diff(
+               File.cwd!(),
+               package_atom,
+               metadata.previous_version,
+               metadata.latest_version
+             ) do
+          {:ok, diff} ->
+            {suspicious?, signals} = VetCore.VersionDiff.suspicious_delta?(diff)
+
+            if suspicious? do
+              Enum.map(signals, fn signal ->
+                "Version #{metadata.previous_version} → #{metadata.latest_version}: #{signal}"
+              end)
+            else
+              []
+            end
+
+          {:error, _} ->
+            []
+        end
+      else
+        []
+      end
+
     all_findings = phantom_findings ++ typosquat_findings
 
     %{
@@ -71,8 +98,9 @@ defmodule VetCore.PreInstallCheck do
       metadata: metadata,
       phantom?: phantom?,
       typosquat_warnings: Enum.map(typosquat_findings, & &1.description),
+      version_diff_warnings: version_diff_warnings,
       findings: all_findings,
-      assessment: assess(metadata, phantom?, typosquat_findings)
+      assessment: assess(metadata, phantom?, typosquat_findings, version_diff_warnings)
     }
   end
 
@@ -96,7 +124,8 @@ defmodule VetCore.PreInstallCheck do
             result
           end)
           |> Enum.filter(fn result ->
-            result.phantom? or result.typosquat_warnings != [] or has_metadata_warnings?(result.metadata)
+            result.phantom? or result.typosquat_warnings != [] or
+              result.version_diff_warnings != [] or has_metadata_warnings?(result.metadata)
           end)
 
         {:ok, results}
@@ -121,7 +150,7 @@ defmodule VetCore.PreInstallCheck do
 
   defp recent_release?(_), do: false
 
-  defp assess(_metadata, true = _phantom?, typosquat_findings) do
+  defp assess(_metadata, true = _phantom?, typosquat_findings, _version_diff_warnings) do
     base = "CRITICAL: Package does not exist on hex.pm."
 
     if typosquat_findings != [] do
@@ -132,7 +161,7 @@ defmodule VetCore.PreInstallCheck do
     end
   end
 
-  defp assess(metadata, false, typosquat_findings) do
+  defp assess(metadata, false, typosquat_findings, version_diff_warnings) do
     warnings = []
 
     warnings =
@@ -158,6 +187,11 @@ defmodule VetCore.PreInstallCheck do
     warnings =
       if typosquat_findings != [],
         do: ["Possible typosquat" | warnings],
+        else: warnings
+
+    warnings =
+      if version_diff_warnings != [],
+        do: ["Suspicious version transition" | warnings],
         else: warnings
 
     warnings =
