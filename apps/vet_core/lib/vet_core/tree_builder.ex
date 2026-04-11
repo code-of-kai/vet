@@ -117,24 +117,53 @@ defmodule VetCore.TreeBuilder do
     end
   end
 
-  # Walk the deps function body collecting dep names from both forms:
-  #   {:phoenix, "~> 1.7"}                          — 2-tuple literal
+  # Walk the deps function body collecting dep names.
+  # Uses Macro.prewalk to traverse the full AST so that computed deps
+  # lists (e.g. `base_deps() ++ dev_deps()`, `if Mix.env() == :dev ...`)
+  # are explored, not just literal lists.
+  #
+  # Matches:
+  #   {:phoenix, "~> 1.7"}                          — 2-tuple with version string
   #   {:phoenix, "~> 1.7", only: :dev}              — 3-tuple, AST: {:{}, _, [name, ...]}
-  defp collect_dep_names(ast, acc) when is_list(ast) do
-    Enum.reduce(ast, acc, &collect_dep_names/2)
-  end
+  #   {:my_dep, git: "https://..."}                  — 2-tuple with keyword opts (git/path deps)
+  #   {:my_dep, path: "../tool", runtime: false}     — 3-tuple keyword opts
+  defp collect_dep_names(ast, acc) do
+    {_ast, names} =
+      Macro.prewalk(ast, acc, fn
+        # 2-tuple: {:name, "~> 1.0"}
+        {name, version} = node, names
+        when is_atom(name) and is_binary(version) and name not in @dep_keyword_opts ->
+          {node, [name | names]}
 
-  defp collect_dep_names({name, version}, acc)
-       when is_atom(name) and is_binary(version) and name not in @dep_keyword_opts do
-    [name | acc]
-  end
+        # 2-tuple: {:name, git: "...", ...} or {:name, path: "..."}
+        {name, opts} = node, names
+        when is_atom(name) and is_list(opts) and name not in @dep_keyword_opts ->
+          if Keyword.keyword?(opts) do
+            {node, [name | names]}
+          else
+            {node, names}
+          end
 
-  defp collect_dep_names({:{}, _meta, [name, version | _opts]}, acc)
-       when is_atom(name) and is_binary(version) and name not in @dep_keyword_opts do
-    [name | acc]
-  end
+        # 3-tuple: {:name, "~> 1.0", only: :dev} — AST form {:{}, meta, [name, version, opts]}
+        {:{}, _meta, [name, version | _opts]} = node, names
+        when is_atom(name) and is_binary(version) and name not in @dep_keyword_opts ->
+          {node, [name | names]}
 
-  defp collect_dep_names(_other, acc), do: acc
+        # 3-tuple: {:name, [git: "..."], [only: :dev]} — git/path with extra opts
+        {:{}, _meta, [name, opts | _rest]} = node, names
+        when is_atom(name) and is_list(opts) and name not in @dep_keyword_opts ->
+          if Keyword.keyword?(opts) do
+            {node, [name | names]}
+          else
+            {node, names}
+          end
+
+        node, names ->
+          {node, names}
+      end)
+
+    names
+  end
 
   # Find a top-level def/defp by name and return its body.
   # Handles single-clause modules and multi-clause __block__ modules.

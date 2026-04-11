@@ -202,6 +202,76 @@ defmodule VetCore.TreeBuilderTest do
     test "returns empty list for malformed source" do
       assert [] = TreeBuilder.extract_dep_names("this is not elixir code {{{")
     end
+
+    test "handles computed deps lists with ++ concatenation" do
+      mix_exs = """
+      defmodule M.MixProject do
+        use Mix.Project
+
+        def project, do: [app: :m, deps: deps()]
+
+        defp deps do
+          [{:phoenix, "~> 1.7"}] ++ dev_deps()
+        end
+
+        defp dev_deps do
+          [{:credo, "~> 1.7", only: :dev}]
+        end
+      end
+      """
+
+      result = TreeBuilder.extract_dep_names(mix_exs)
+      assert :phoenix in result
+    end
+
+    test "handles conditional deps with if expressions" do
+      mix_exs = """
+      defmodule M.MixProject do
+        use Mix.Project
+
+        def project, do: [app: :m, deps: deps()]
+
+        defp deps do
+          base = [{:jason, "~> 1.4"}]
+
+          if Mix.env() == :dev do
+            base ++ [{:dialyxir, "~> 1.4", only: :dev}]
+          else
+            base
+          end
+        end
+      end
+      """
+
+      result = TreeBuilder.extract_dep_names(mix_exs)
+      assert :jason in result
+      assert :dialyxir in result
+    end
+
+    test "handles git/path deps without version strings" do
+      mix_exs = """
+      defmodule M.MixProject do
+        use Mix.Project
+
+        def project, do: [app: :m, deps: deps()]
+
+        defp deps do
+          [
+            {:phoenix, "~> 1.7"},
+            {:my_lib, git: "https://github.com/org/my_lib.git"},
+            {:local_tool, path: "../tool"},
+            {:umbrella_dep, in_umbrella: true}
+          ]
+        end
+      end
+      """
+
+      result = TreeBuilder.extract_dep_names(mix_exs)
+      assert :phoenix in result
+      assert :my_lib in result
+      assert :local_tool in result
+      assert :umbrella_dep in result
+    end
   end
 
   test "marks non-direct deps as direct?: false (baseline comparison)", %{tmp_dir: tmp_dir} do
