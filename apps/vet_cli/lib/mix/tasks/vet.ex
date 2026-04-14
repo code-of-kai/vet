@@ -16,6 +16,7 @@ defmodule Mix.Tasks.Vet do
           threshold: :integer,
           skip_hex: :boolean,
           no_diff: :boolean,
+          no_history: :boolean,
           verbose: :boolean,
           ai: :boolean
         ],
@@ -39,7 +40,8 @@ defmodule Mix.Tasks.Vet do
     threshold = opts[:threshold] || 50
     scan_opts = [
       skip_hex: opts[:skip_hex] || false,
-      skip_diff: opts[:no_diff] || false
+      skip_diff: opts[:no_diff] || false,
+      skip_history: opts[:no_history] || false
     ]
 
     case VetCore.scan(path, scan_opts) do

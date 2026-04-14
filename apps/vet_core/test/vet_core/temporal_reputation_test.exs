@@ -117,6 +117,19 @@ defmodule VetCore.TemporalReputationTest do
       assert score == 0
     end
 
+    test "score capped at 100" do
+      history = make_clean_history(15)
+      rep = TemporalReputation.build(:pkg, history)
+
+      findings =
+        for cat <- [:system_exec, :code_eval, :network_access, :file_access, :env_access, :obfuscation] do
+          %{category: cat}
+        end
+
+      score = TemporalReputation.anomaly_score(rep, findings)
+      assert score == 100
+    end
+
     test "with new category appearing gets bonus applied" do
       # History has :file_access findings
       history = [

@@ -65,6 +65,10 @@ defmodule VetCore.Scanner do
         allowlist_notes: allowlist_notes
       }
 
+      unless opts[:skip_history] do
+        VetCore.ScanStore.save(project_path, report)
+      end
+
       {:ok, report}
     end
   end
@@ -217,6 +221,16 @@ defmodule VetCore.Scanner do
     # Combine: allowlist-filtered findings + version diff findings (unfiltered)
     combined_findings = filtered_findings ++ version_diff_findings
 
+    # Temporal reputation: load scan history, detect anomalies
+    temporal_findings =
+      if opts[:skip_history] == true do
+        []
+      else
+        build_temporal_findings(dep, combined_findings, project_path)
+      end
+
+    combined_findings = combined_findings ++ temporal_findings
+
     {risk_score, risk_level} = VetCore.Scorer.score(dep, combined_findings, meta)
 
     %DependencyReport{
@@ -299,6 +313,45 @@ defmodule VetCore.Scanner do
       end
     else
       []
+    end
+  end
+
+  defp build_temporal_findings(dep, current_findings, project_path) do
+    history = VetCore.ScanStore.load_history(project_path, dep.name)
+
+    if history == [] do
+      []
+    else
+      reputation = VetCore.TemporalReputation.build(dep.name, history)
+      anomaly = VetCore.TemporalReputation.anomaly_score(reputation, current_findings)
+
+      if anomaly > 0 do
+        severity =
+          cond do
+            anomaly >= 30 -> :critical
+            anomaly >= 15 -> :warning
+            true -> :info
+          end
+
+        [
+          %VetCore.Types.Finding{
+            dep_name: dep.name,
+            file_path: "temporal_reputation",
+            line: 1,
+            check_id: :temporal_anomaly,
+            category: :temporal_anomaly,
+            severity: severity,
+            compile_time?: false,
+            description:
+              "Temporal anomaly (score: #{anomaly}): " <>
+                "package had #{reputation.clean_streak} consecutive clean scans " <>
+                "but now has #{length(current_findings)} finding(s) — " <>
+                "possible supply chain compromise"
+          }
+        ]
+      else
+        []
+      end
     end
   end
 

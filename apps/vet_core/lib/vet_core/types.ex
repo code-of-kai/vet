@@ -58,6 +58,7 @@ defmodule VetCore.Types do
             | :metadata
             | :phantom_package
             | :version_transition
+            | :temporal_anomaly
 
     @type t :: %__MODULE__{
             dep_name: atom(),
