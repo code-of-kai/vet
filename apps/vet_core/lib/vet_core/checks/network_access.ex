@@ -13,21 +13,58 @@ defmodule VetCore.Checks.NetworkAccess do
   @specific_patterns [
     {[:httpc], :request},
     {[:gen_tcp], :connect},
-    {[:ssl], :connect}
+    # TCP server-side — GH issue #7.
+    {[:gen_tcp], :listen},
+    {[:gen_tcp], :accept},
+    {[:gen_tcp], :controlling_process},
+    {[:ssl], :connect},
+    {[:ssl], :listen},
+    {[:ssl], :accept},
+    # UDP — GH issue #8.
+    {[:gen_udp], :open},
+    {[:gen_udp], :connect},
+    {[:gen_udp], :send},
+    {[:gen_udp], :recv},
+    # SCTP — GH issue #8.
+    {[:gen_sctp], :open},
+    {[:gen_sctp], :connect},
+    {[:gen_sctp], :listen},
+    {[:gen_sctp], :send},
+    {[:gen_sctp], :recv}
   ]
 
-  # Module-wildcard patterns — any function on these modules is flagged
+  # Module-wildcard patterns — any function on these modules is flagged.
+  # `:socket` added for GH issue #9; it's the low-level OTP socket API
+  # and every function in the module is network access.
   @wildcard_modules %{
     [:Req] => "Req",
     [:HTTPoison] => "HTTPoison",
     [:Finch] => "Finch",
-    [:Mint, :HTTP] => "Mint.HTTP"
+    [:Mint, :HTTP] => "Mint.HTTP",
+    [:socket] => ":socket"
   }
 
   @specific_descriptions %{
     {[:httpc], :request} => "Call to :httpc.request — makes an HTTP request via Erlang's httpc",
     {[:gen_tcp], :connect} => "Call to :gen_tcp.connect — opens a raw TCP connection",
-    {[:ssl], :connect} => "Call to :ssl.connect — opens an SSL/TLS connection"
+    {[:gen_tcp], :listen} =>
+      "Call to :gen_tcp.listen — opens a TCP server socket",
+    {[:gen_tcp], :accept} =>
+      "Call to :gen_tcp.accept — accepts an incoming TCP connection",
+    {[:gen_tcp], :controlling_process} =>
+      "Call to :gen_tcp.controlling_process — transfers ownership of a TCP socket",
+    {[:ssl], :connect} => "Call to :ssl.connect — opens an SSL/TLS connection",
+    {[:ssl], :listen} => "Call to :ssl.listen — opens an SSL/TLS server socket",
+    {[:ssl], :accept} => "Call to :ssl.accept — accepts an incoming TLS connection",
+    {[:gen_udp], :open} => "Call to :gen_udp.open — opens a UDP socket",
+    {[:gen_udp], :connect} => "Call to :gen_udp.connect — associates a UDP socket with a peer",
+    {[:gen_udp], :send} => "Call to :gen_udp.send — sends a UDP datagram",
+    {[:gen_udp], :recv} => "Call to :gen_udp.recv — receives a UDP datagram",
+    {[:gen_sctp], :open} => "Call to :gen_sctp.open — opens an SCTP socket",
+    {[:gen_sctp], :connect} => "Call to :gen_sctp.connect — opens an SCTP association",
+    {[:gen_sctp], :listen} => "Call to :gen_sctp.listen — marks an SCTP socket as server",
+    {[:gen_sctp], :send} => "Call to :gen_sctp.send — sends an SCTP message",
+    {[:gen_sctp], :recv} => "Call to :gen_sctp.recv — receives an SCTP message"
   }
 
   @impl true

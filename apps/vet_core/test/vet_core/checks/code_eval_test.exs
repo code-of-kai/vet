@@ -128,4 +128,45 @@ defmodule VetCore.Checks.CodeEvalTest do
 
     assert findings == []
   end
+
+  # --- Regression tests for GH issue #4 ---
+
+  test "detects :compile.file (GH #4)", %{tmp_dir: tmp_dir} do
+    source = ~S"""
+    defmodule Foo do
+      def foo do
+        :compile.file(~c"totally_not_harmful_module.erl", [])
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ ":compile.file"))
+  end
+
+  test "detects :compile.forms (GH #4)", %{tmp_dir: tmp_dir} do
+    source = ~S"""
+    defmodule Foo do
+      def foo(forms) do
+        :compile.forms(forms, [])
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ ":compile.forms"))
+  end
+
+  test "detects :compile.noenv_file", %{tmp_dir: tmp_dir} do
+    source = ~S"""
+    defmodule Foo do
+      def foo(path) do
+        :compile.noenv_file(path, [])
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ ":compile.noenv_file"))
+  end
 end

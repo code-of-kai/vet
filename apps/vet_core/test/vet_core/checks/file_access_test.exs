@@ -147,4 +147,66 @@ defmodule VetCore.Checks.FileAccessTest do
 
     assert findings == []
   end
+
+  # --- Regression tests for GH issues #5 and #6 ---
+
+  test "detects File.open! on sensitive path (GH #5)", %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule Foo do
+      def foo do
+        f = File.open!("/etc/passwd")
+        IO.read(f, :eof)
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ "File.open!"))
+
+    sensitive = Enum.find(findings, &(&1.severity == :critical))
+    assert sensitive, "expected a critical finding for /etc/passwd access"
+    assert sensitive.description =~ "sensitive path"
+  end
+
+  test "detects plain File.open (GH #5 non-bang form)", %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule Foo do
+      def foo(path) do
+        File.open(path)
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ "File.open"))
+  end
+
+  test "detects :file.read_file on sensitive path (GH #6)", %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule Foo do
+      def file do
+        :file.read_file(~c"/etc/passwd")
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ ":file.read_file"))
+
+    sensitive = Enum.find(findings, &(&1.severity == :critical))
+    assert sensitive, "expected a critical finding for /etc/passwd access via :file"
+  end
+
+  test "detects :file.consult (GH #6)", %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule Foo do
+      def load do
+        :file.consult(~c"config.exs")
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ ":file.consult"))
+  end
 end

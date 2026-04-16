@@ -171,6 +171,113 @@ defmodule VetCore.Checks.NetworkAccessTest do
     assert findings == []
   end
 
+  # --- Regression tests for GH issues #7, #8, #9 ---
+  # Each test uses the exact repro from the issue body.
+
+  test "detects :gen_tcp.listen (GH #7)", %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule Foo do
+      def foo do
+        :gen_tcp.listen(0, [])
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ ":gen_tcp.listen"))
+  end
+
+  test "detects :gen_tcp.accept (GH #7)", %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule Foo do
+      def foo(sock) do
+        :gen_tcp.accept(sock)
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ ":gen_tcp.accept"))
+  end
+
+  test "detects :gen_udp.open (GH #8)", %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule Foo do
+      def foo do
+        :gen_udp.open(0, [])
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ ":gen_udp.open"))
+  end
+
+  test "detects :gen_udp.connect (GH #8)", %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule Foo do
+      def foo(sock) do
+        :gen_udp.connect(sock, ~c"localhost", 53)
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ ":gen_udp.connect"))
+  end
+
+  test "detects :gen_sctp.open (GH #8)", %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule Foo do
+      def foo do
+        :gen_sctp.open([])
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ ":gen_sctp.open"))
+  end
+
+  test "detects :gen_sctp.listen (GH #8)", %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule Foo do
+      def foo(sock) do
+        :gen_sctp.listen(sock, true)
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ ":gen_sctp.listen"))
+  end
+
+  test "detects :socket.open (GH #9)", %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule Foo do
+      def foo do
+        {:ok, s} = :socket.open(:inet, :stream)
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ ":socket.open"))
+  end
+
+  test "detects :socket.bind (GH #9)", %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule Foo do
+      def foo(sock, addr) do
+        :socket.bind(sock, addr)
+      end
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+    assert Enum.any?(findings, &(&1.description =~ ":socket.bind"))
+  end
+
   test "runtime network access gets :warning severity", %{tmp_dir: tmp_dir} do
     source = """
     defmodule TestMod do
