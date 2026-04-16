@@ -54,9 +54,19 @@ defmodule VetCore.Checks.CoverageTest do
     {FileAccess, ~s|:file.read_file_info(path)|, ":file.read_file_info"},
     {FileAccess, ~s|:file.consult(path)|, ":file.consult"},
     {FileAccess, ~s|:file.open(path, [:read])|, ":file.open"},
+    {FileAccess, ~s|:file.read(sock, 100)|, ":file.read"},
+    {FileAccess, ~s|:file.pread(sock, 0, 100)|, ":file.pread"},
+    {FileAccess, ~s|:file.script(path)|, ":file.script"},
+    {FileAccess, ~s|:file.path_consult([~c"a"], path)|, ":file.path_consult"},
+    {FileAccess, ~s|:file.path_script([~c"a"], path)|, ":file.path_script"},
     {FileAccess, ~s|:file.list_dir(path)|, ":file.list_dir"},
     {FileAccess, ~s|:file.read_link(path)|, ":file.read_link"},
-    {FileAccess, ~s|:file.script(path)|, ":file.script"},
+    {FileAccess, ~s|:file.write_file(path, data)|, ":file.write_file"},
+    {FileAccess, ~s|:file.delete(path)|, ":file.delete"},
+    {FileAccess, ~s|:file.del_dir(path)|, ":file.del_dir"},
+    {FileAccess, ~s|:file.rename(a, b)|, ":file.rename"},
+    {FileAccess, ~s|:file.make_link(a, b)|, ":file.make_link"},
+    {FileAccess, ~s|:file.make_symlink(a, b)|, ":file.make_symlink"},
 
     # --- NetworkAccess (specific) ---
     {NetworkAccess, ~s|:httpc.request(url)|, ":httpc.request"},
@@ -140,5 +150,101 @@ defmodule VetCore.Checks.CoverageTest do
                "`#{unquote(call_source)}`, but got: " <>
                inspect(Enum.map(findings, & &1.description))
     end
+  end
+
+  # --- Symmetric equivalence tests ---
+  #
+  # The per-row tests above prove: every swept call fires. The tests below
+  # prove the other direction: every declared target pattern in each check
+  # module has at least one swept call, and every swept call corresponds to
+  # a declared target pattern. Together these make the coverage table a
+  # bijection with the check's target lists.
+  #
+  # Without this, someone can add `{[:Code], :new_danger}` to CodeEval's
+  # `@patterns` and the old tests still pass; new_danger is technically
+  # covered by whatever targeted test they wrote, but silently absent from
+  # the exhaustive sweep. These assertions fail loudly in that case.
+
+  describe "symmetric equivalence" do
+    test "CodeEval declared patterns equal swept patterns" do
+      assert_equivalent(CodeEval, CodeEval.target_patterns())
+    end
+
+    test "FileAccess declared patterns equal swept patterns" do
+      assert_equivalent(FileAccess, FileAccess.target_patterns())
+    end
+
+    test "NetworkAccess declared patterns (specific + wildcard) equal swept patterns" do
+      assert_equivalent(NetworkAccess, NetworkAccess.target_patterns())
+    end
+  end
+
+  # Extract the `{module_segments, function_atom}` tuple from an Elixir call
+  # source string. Handles both Elixir aliases (`Code.eval_string(...)`) and
+  # Erlang atom modules (`:gen_tcp.listen(...)` or `:socket.open(...)`).
+  defp extract_call(source) do
+    case Code.string_to_quoted(source) do
+      {:ok, {{:., _, [{:__aliases__, _, segs}, func]}, _, _}} ->
+        {segs, func}
+
+      {:ok, {{:., _, [mod_atom, func]}, _, _}} when is_atom(mod_atom) ->
+        {[mod_atom], func}
+
+      _ ->
+        nil
+    end
+  end
+
+  # Assert the declared target list and the swept call set are bijective
+  # modulo wildcards. A wildcard `{segs, :*}` is satisfied by any swept
+  # call whose module equals `segs`.
+  defp assert_equivalent(check_module, declared_patterns) do
+    swept_calls =
+      for {mod, call, _desc} <- @coverage,
+          mod == check_module,
+          pair = extract_call(call),
+          not is_nil(pair),
+          do: pair
+
+    swept_set = MapSet.new(swept_calls)
+    declared_set = MapSet.new(declared_patterns)
+
+    {wildcards, specifics} =
+      Enum.split_with(declared_patterns, fn
+        {_, :*} -> true
+        _ -> false
+      end)
+
+    wildcard_modules = MapSet.new(wildcards, fn {segs, _} -> segs end)
+
+    # Specific patterns must appear exactly in the sweep.
+    specifics_set = MapSet.new(specifics)
+    missing_from_sweep = MapSet.difference(specifics_set, swept_set)
+
+    assert MapSet.size(missing_from_sweep) == 0,
+           "#{inspect(check_module)} declares targets that have no swept call in @coverage: " <>
+             inspect(MapSet.to_list(missing_from_sweep))
+
+    # Every wildcard module must have at least one swept call.
+    uncovered_wildcards =
+      Enum.reject(wildcards, fn {segs, _} ->
+        Enum.any?(swept_calls, fn {mod, _func} -> mod == segs end)
+      end)
+
+    assert uncovered_wildcards == [],
+           "#{inspect(check_module)} declares wildcard modules with no swept call: " <>
+             inspect(uncovered_wildcards)
+
+    # Every swept call must be either a declared specific pattern or under a
+    # declared wildcard module.
+    unexplained =
+      Enum.reject(swept_calls, fn {segs, func} = pair ->
+        MapSet.member?(specifics_set, pair) or MapSet.member?(wildcard_modules, segs) or
+          {segs, func} in declared_set
+      end)
+
+    assert unexplained == [],
+           "#{inspect(check_module)} @coverage has swept calls that don't match any declared target: " <>
+             inspect(unexplained)
   end
 end

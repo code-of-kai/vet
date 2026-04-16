@@ -67,6 +67,21 @@ defmodule VetCore.Checks.NetworkAccess do
     {[:gen_sctp], :recv} => "Call to :gen_sctp.recv — receives an SCTP message"
   }
 
+  @doc """
+  Returns every pattern this check detects. Specific patterns are returned as
+  `{module_segments, function_atom}`. Wildcard modules (where any function call
+  fires a finding) are returned as `{module_segments, :*}`.
+
+  Exposed so the coverage sweep test in
+  `apps/vet_core/test/vet_core/checks/coverage_test.exs` can assert the
+  declared target list and the swept calls are exactly equal. Wildcard
+  modules are satisfied by any coverage row whose module matches.
+  """
+  def target_patterns do
+    wildcards = for {segs, _name} <- @wildcard_modules, do: {segs, :*}
+    @specific_patterns ++ wildcards
+  end
+
   @impl true
   def run(%{name: dep_name} = _dependency, project_path, _state) do
     dep_name

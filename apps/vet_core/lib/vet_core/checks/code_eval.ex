@@ -28,6 +28,17 @@ defmodule VetCore.Checks.CodeEval do
 
   @pattern_set MapSet.new(@patterns)
 
+  @doc """
+  Returns every `{module_segments, function_atom}` pattern this check detects.
+
+  Exposed so the coverage sweep test in
+  `apps/vet_core/test/vet_core/checks/coverage_test.exs` can assert that
+  the declared target list and the swept calls are exactly equal. Adding
+  a new pattern here without also adding a matching call to the sweep
+  fails the test loudly.
+  """
+  def target_patterns, do: @patterns
+
   @descriptions %{
     {[:Code], :eval_string} =>
       "Call to Code.eval_string — dynamically evaluates Elixir code from a string",

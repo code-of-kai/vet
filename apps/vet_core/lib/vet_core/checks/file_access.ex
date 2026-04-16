@@ -49,6 +49,20 @@ defmodule VetCore.Checks.FileAccess do
     :make_symlink
   ]
 
+  @doc """
+  Returns every `{module_segments, function_atom}` pattern this check detects,
+  for both Elixir's `File` and Erlang's `:file` modules.
+
+  Exposed so the coverage sweep test in
+  `apps/vet_core/test/vet_core/checks/coverage_test.exs` can assert that
+  the declared target list and the swept calls are exactly equal.
+  """
+  def target_patterns do
+    elixir = for f <- @file_functions, do: {[:File], f}
+    erlang = for f <- @erlang_file_functions, do: {[:file], f}
+    elixir ++ erlang
+  end
+
   @impl true
   def run(%{name: dep_name} = _dependency, project_path, _state) do
     dep_name
