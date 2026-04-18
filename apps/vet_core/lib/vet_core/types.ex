@@ -40,10 +40,21 @@ defmodule VetCore.Types do
       :severity,
       :snippet,
       :description,
-      compile_time?: false
+      compile_time?: false,
+      evidence_level: :pattern_match
     ]
 
     @type severity :: :info | :warning | :critical
+
+    # Evidence ladder — graduated confidence in a finding.
+    # Scorer weights each rung; correlate_findings + llm_review + sandbox
+    # promote findings up the ladder as independent signals agree.
+    @type evidence_level ::
+            :pattern_match
+            | :corroborated
+            | :sandbox_observed
+            | :llm_confirmed
+            | :known_incident
 
     @type category ::
             :system_exec
@@ -69,6 +80,7 @@ defmodule VetCore.Types do
             category: category(),
             severity: severity(),
             compile_time?: boolean(),
+            evidence_level: evidence_level(),
             snippet: String.t() | nil,
             description: String.t()
           }
@@ -107,7 +119,8 @@ defmodule VetCore.Types do
       :risk_score,
       :risk_level,
       :version_diff,
-      findings: []
+      findings: [],
+      patches: []
     ]
 
     @type risk_level :: :low | :medium | :high | :critical
@@ -118,7 +131,8 @@ defmodule VetCore.Types do
             hex_metadata: HexMetadata.t() | nil,
             risk_score: non_neg_integer(),
             risk_level: risk_level(),
-            version_diff: map() | nil
+            version_diff: map() | nil,
+            patches: [map()]
           }
   end
 
