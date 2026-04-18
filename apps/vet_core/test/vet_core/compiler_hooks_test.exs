@@ -141,4 +141,56 @@ defmodule VetCore.Checks.CompilerHooksTest do
 
     assert benign_findings == []
   end
+
+  describe "custom compilers — keyword-only form (no Mix.compilers() call)" do
+    # The existing "custom compilers in mix.exs are detected" test passes because
+    # the fixture also contains `++ Mix.compilers()`, which the `match_compilers_call`
+    # matcher catches. That masks whether `match_custom_compilers` actually fires
+    # on the `compilers: [...]` keyword itself. This test isolates the keyword form.
+    @isolated_project Path.expand("../fixtures/compiler_hooks_keyword_only", __DIR__)
+    @isolated_dep Path.join([@isolated_project, "deps", "keyword_dep"])
+
+    setup do
+      File.mkdir_p!(Path.join(@isolated_dep, "lib"))
+
+      File.write!(Path.join([@isolated_dep, "lib", "ok.ex"]), """
+      defmodule Ok do
+        def noop, do: :ok
+      end
+      """)
+
+      # mix.exs with a custom compiler declared as a plain keyword — NO call
+      # to `Mix.compilers()`, so only the keyword-form matcher can surface it.
+      File.write!(Path.join(@isolated_dep, "mix.exs"), """
+      defmodule KeywordDep.MixProject do
+        use Mix.Project
+
+        def project do
+          [app: :keyword_dep, compilers: [:my_evil_compiler, :elixir]]
+        end
+      end
+      """)
+
+      on_exit(fn -> File.rm_rf!(@isolated_project) end)
+      :ok
+    end
+
+    test "detects `compilers: [...]` keyword in mix.exs without an accompanying call" do
+      dep = %Dependency{name: :keyword_dep, version: "1.0.0", source: :hex}
+      findings = CompilerHooks.run(dep, @isolated_project, [])
+
+      # Claim under attack: the keyword form alone is sufficient to surface a
+      # :compiler_hooks finding. If this fails, `match_custom_compilers` is dead
+      # code (its pattern expects a 3-tuple but keyword entries are 2-tuples).
+      keyword_findings =
+        Enum.filter(findings, fn f ->
+          String.contains?(f.description, "Custom compilers defined in mix.exs")
+        end)
+
+      assert keyword_findings != [],
+             "expected a compiler_hooks finding from the `compilers:` keyword alone; " <>
+               "got #{length(findings)} total findings: " <>
+               inspect(Enum.map(findings, & &1.description))
+    end
+  end
 end

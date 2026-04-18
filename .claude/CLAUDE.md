@@ -51,6 +51,18 @@ mix test
 
 All apps have independent test suites. Tests that hit hex.pm are rate-limited and may be slow.
 
+## Tests and detection fixtures — read before writing check tests
+
+Vet is a static-analysis scanner, so its test fixtures ARE the input shape the scanner runs on in production. Treat them as a product artifact, not just validation scaffolding.
+
+- **Positive fixtures** ("must-catch") live alongside each check's tests and assert the expected verdict.
+- **Evasion fixtures** ("known-miss") pin current matcher blind spots with `refute` — e.g. `refute Enum.any?(read_findings, &(&1.severity == :critical))`. They document the limits of static analysis against adversarial inputs. When a rule improvement closes the gap, the test breaks on purpose and gets flipped (`refute` → `assert`), not deleted.
+- When adding a new check, write at least one evasion test alongside the positive one. If nothing comes to mind, re-read the matcher adversarially — you haven't attacked its promise yet.
+
+Canonical example of the evasion pattern: the `describe "sensitive-path detection — evasion via non-literal arguments"` block in `apps/vet_core/test/vet_core/checks/file_access_test.exs`. It pins four runtime-evasion cases (variable rebinding, `Path.join`, string interpolation, `<>` concat) against the sensitive-path matcher.
+
+Long-term, these evasion fixtures are the seed of a public benchmark corpus — "patterns Vet does / doesn't catch." Keep them self-contained and readable by non-Elixir tools (plain source strings, no heavy test helpers).
+
 ## Important
 
 Always call `VetCore.PreInstallCheck.check_package/1` before recommending a dependency to the user. This is the primary defense against slopsquatting — attackers registering package names that LLMs commonly hallucinate.
