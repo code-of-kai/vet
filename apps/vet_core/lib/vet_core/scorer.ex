@@ -58,11 +58,29 @@ defmodule VetCore.Scorer do
     end)
   end
 
-  defp finding_score(%Finding{compile_time?: true, severity: :critical}), do: 40
-  defp finding_score(%Finding{compile_time?: true, severity: :warning}), do: 20
-  defp finding_score(%Finding{compile_time?: false, severity: :critical}), do: 15
-  defp finding_score(%Finding{compile_time?: false, severity: :warning}), do: 5
-  defp finding_score(%Finding{severity: :info}), do: 1
+  @doc false
+  # Evidence weighting — clearwing-style graduated confidence.
+  # Pattern match is baseline (1.0); promotions add weight as independent
+  # signals agree (correlation, sandbox trace, LLM second-pass, incident corpus).
+  # Monotone non-decreasing along the ladder is an invariant (property-tested).
+  @spec evidence_weight(Finding.evidence_level()) :: float()
+  def evidence_weight(:pattern_match), do: 1.0
+  def evidence_weight(:corroborated), do: 1.3
+  def evidence_weight(:sandbox_observed), do: 1.5
+  def evidence_weight(:llm_confirmed), do: 1.7
+  def evidence_weight(:known_incident), do: 2.5
+  def evidence_weight(_), do: 1.0
+
+  defp finding_score(%Finding{} = f) do
+    base = severity_base(f)
+    round(base * evidence_weight(f.evidence_level))
+  end
+
+  defp severity_base(%Finding{compile_time?: true, severity: :critical}), do: 40
+  defp severity_base(%Finding{compile_time?: true, severity: :warning}), do: 20
+  defp severity_base(%Finding{compile_time?: false, severity: :critical}), do: 15
+  defp severity_base(%Finding{compile_time?: false, severity: :warning}), do: 5
+  defp severity_base(%Finding{severity: :info}), do: 1
 
   defp score_metadata(_dependency, nil), do: 0
 

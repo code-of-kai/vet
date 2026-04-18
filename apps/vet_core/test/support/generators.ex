@@ -12,6 +12,9 @@ defmodule VetCore.Generators do
 
   def severity, do: member_of([:info, :warning, :critical])
 
+  def evidence_level,
+    do: member_of([:pattern_match, :corroborated, :sandbox_observed, :llm_confirmed, :known_incident])
+
   def category do
     member_of([
       :system_exec, :code_eval, :network_access, :file_access,
@@ -90,7 +93,8 @@ defmodule VetCore.Generators do
                               :obfuscation_dynamic_apply, :obfuscation_decode_eval]),
       cat <- category(),
       sev <- severity(),
-      compile_time? <- boolean()
+      compile_time? <- boolean(),
+      evidence <- evidence_level()
     ) do
       %Finding{
         dep_name: dep_name,
@@ -100,6 +104,7 @@ defmodule VetCore.Generators do
         category: cat,
         severity: sev,
         compile_time?: compile_time?,
+        evidence_level: evidence,
         description: "Test finding: #{check_id}"
       }
     end

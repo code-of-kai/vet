@@ -158,6 +158,7 @@ defmodule VetCore.Scanner do
         if finding.check_id == :obfuscation_dynamic_apply do
           %{finding |
             severity: :critical,
+            evidence_level: :corroborated,
             description: finding.description <>
               " (ELEVATED: combined with network access in the same dependency — likely exfiltration pipeline)"
           }
@@ -180,6 +181,7 @@ defmodule VetCore.Scanner do
         if finding.check_id in [:obfuscation_entropy, :obfuscation_crypto_decrypt] do
           %{finding |
             severity: :critical,
+            evidence_level: :corroborated,
             description: finding.description <>
               " (ELEVATED: high-entropy payload paired with decryption capability — possible encrypted malicious code)"
           }
