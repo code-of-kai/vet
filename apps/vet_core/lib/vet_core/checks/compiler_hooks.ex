@@ -79,15 +79,20 @@ defmodule VetCore.Checks.CompilerHooks do
     end
   end
 
-  # Detect custom compilers in mix.exs: `compilers: [...]`
-  # This is a bare function call / keyword, not a remote call, so direct AST matching.
+  # Detect custom compilers in mix.exs: `compilers: [...]`.
+  #
+  # This is a keyword-list entry inside `def project`, so the AST node is a
+  # 2-tuple `{:compilers, [...]}`. (An earlier version matched a 3-tuple
+  # `{:compilers, meta, args}` — that's a function-call AST, not a keyword
+  # entry, so it never fired.) Keyword entries carry no meta, so the finding
+  # surfaces without a line number — the description is still actionable.
   defp match_custom_compilers(node, state, dep_name, source) do
     case node do
-      {:compilers, meta, [[_ | _] = _compilers]} ->
+      {:compilers, [_ | _] = _compilers} ->
         build_finding(
           "Custom compilers defined in mix.exs — may execute arbitrary code during compilation",
           :critical,
-          meta,
+          [],
           state,
           dep_name,
           source
