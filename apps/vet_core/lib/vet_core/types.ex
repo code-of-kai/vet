@@ -70,6 +70,13 @@ defmodule VetCore.Types do
             | :phantom_package
             | :version_transition
             | :temporal_anomaly
+            | :bytecode_imports
+            | :native_code
+            | :reflection
+            | :bytecode_version_delta
+            | :sandboxed_compile_behavior
+            | :capability_mismatch
+            | :attestation_mismatch
 
     @type t :: %__MODULE__{
             dep_name: atom(),

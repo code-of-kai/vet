@@ -15,7 +15,41 @@ defmodule VetCore.Scanner do
     VetCore.Checks.ShadyLinks,
     VetCore.Checks.CompilerHooks,
     VetCore.Checks.EExEval,
-    VetCore.Checks.AtomExhaustion
+    VetCore.Checks.AtomExhaustion,
+    # Layer 1 — BEAM bytecode analysis. Runs only when compiled artifacts
+    # are present. Defeats source-level evasion (defdelegate, .erl, atom
+    # aliasing, macro-synthesized calls).
+    VetCore.Checks.BeamImports,
+    # Layer 5 — Native code surface. Detects NIF binaries, native build
+    # systems, and modules importing :erlang.load_nif/2. Native code
+    # bypasses every other Vet layer because it is opaque machine code
+    # running in the BEAM scheduler.
+    VetCore.Checks.NativeCode,
+    # Layer 4 — BEAM-level version delta. Compares the current compiled
+    # profile against a cached snapshot of an earlier version. Catches
+    # security profile shifts (new dangerous imports, new
+    # $handle_undefined_function/2, dispatch spikes, suspicious atoms)
+    # that were introduced in this release.
+    VetCore.Checks.BeamDelta,
+    # Layer 3 — Reflection tripwires at the BEAM level. Counts dynamic
+    # dispatch instructions and reflection-class imports per module.
+    # Defeats source-level evasion via apply/3, String.to_atom, and
+    # $handle_undefined_function/2 because all of them surface in the
+    # BEAM regardless of how the source was spelled.
+    VetCore.Checks.BeamReflection,
+    # Layer 7 — Capability declaration verifier. Compares the
+    # `:vet_capabilities` list declared in mix.exs against the
+    # capabilities actually exercised by the compiled BEAMs. An
+    # undeclared capability is a critical finding because it represents
+    # behavior the package's author never promised.
+    VetCore.Checks.CapabilityVerifier,
+    # Layer 6 — Attestation manifest verification. When a package has a
+    # signed `*.manifest.json` + `*.sig` stored in `.vet/attestations/`,
+    # confirm the signature is by a trusted key and every declared
+    # module hash matches the local install. Opt-in via `attestation:
+    # :require` or `:strict`; advisory (no findings for unsigned) by
+    # default.
+    VetCore.Checks.Attestation
   ]
 
   @spec scan(String.t(), keyword()) :: {:ok, ScanReport.t()} | {:error, term()}
@@ -35,7 +69,12 @@ defmodule VetCore.Scanner do
           deps,
           fn dep -> run_checks_for_dep(dep, project_path, hex_metadata, opts) end,
           ordered: true,
-          max_concurrency: System.schedulers_online()
+          max_concurrency: System.schedulers_online(),
+          # Generous per-dep timeout: the BEAM-level layers (imports,
+          # reflection, delta, capability, attestation) profile every
+          # compiled module in the dep's ebin, which can take several
+          # seconds for large packages.
+          timeout: 60_000
         )
         |> Enum.zip(deps)
         |> Enum.map(fn
@@ -74,6 +113,22 @@ defmodule VetCore.Scanner do
   end
 
   # -- Private -----------------------------------------------------------------
+
+  # SandboxedCompile is opt-in because each run does a real mix deps.compile
+  # inside an OS-level sandbox — significantly slower than static analysis.
+  defp active_checks(opts) do
+    if opts[:sandboxed_compile] do
+      @checks ++ [VetCore.Checks.SandboxedCompile]
+    else
+      @checks
+    end
+  end
+
+  defp check_state(VetCore.Checks.SandboxedCompile, opts) do
+    [sandboxed_compile: true, timeout_ms: opts[:sandbox_timeout_ms]]
+  end
+
+  defp check_state(_check_mod, _opts), do: []
 
   defp compute_allowlist_notes(deps, dependency_reports) do
     deps_by_name = Map.new(deps, &{&1.name, &1})
@@ -147,6 +202,32 @@ defmodule VetCore.Scanner do
     findings
     |> elevate_apply_with_network()
     |> elevate_entropy_with_crypto()
+    |> downgrade_mix_task_findings()
+  end
+
+  # Findings inside `lib/mix/**` (or compiled `Elixir.Mix.Tasks.*.beam`) are
+  # build-time tooling, not runtime code. A Mix task only executes when the
+  # developer explicitly invokes `mix <task>`, and the modules are not part of
+  # a production release by default. Keep the signal but drop the severity to
+  # :info so 50 RT warnings from a code generator (e.g. `phx.gen.auth`) don't
+  # dominate the score the way real runtime risk should. CT findings and
+  # sensitive-path criticals are preserved.
+  defp downgrade_mix_task_findings(findings) do
+    Enum.map(findings, fn finding ->
+      cond do
+        finding.file_path == nil -> finding
+        not mix_task_path?(finding.file_path) -> finding
+        finding.compile_time? -> finding
+        finding.severity == :critical -> finding
+        finding.severity == :info -> finding
+        true -> %{finding | severity: :info}
+      end
+    end)
+  end
+
+  defp mix_task_path?(path) do
+    String.contains?(path, "/lib/mix/") or
+      String.contains?(path, "/Elixir.Mix.Tasks.")
   end
 
   # apply/3 (warning) + network access in the same dependency = likely exfiltration pipeline
@@ -201,10 +282,13 @@ defmodule VetCore.Scanner do
     parsed_files = VetCore.Checks.FileHelper.read_and_parse(dep.name, project_path)
     state = [parsed_files: parsed_files]
 
+    checks = active_checks(opts)
+
     all_findings =
-      @checks
+      checks
       |> Enum.flat_map(fn check_mod ->
-        check_mod.run(dep, project_path, state)
+        merged_state = Keyword.merge(state, check_state(check_mod, opts))
+        check_mod.run(dep, project_path, merged_state)
       end)
       |> correlate_findings()
 
@@ -255,6 +339,13 @@ defmodule VetCore.Scanner do
       end
 
     {risk_score, risk_level} = VetCore.Scorer.score(dep, combined_findings, meta)
+
+    # Snapshot this dep's compiled profile into the cache so the next
+    # scan can run a BEAM-level diff against this version. Best-effort —
+    # missing _build is not an error.
+    unless opts[:skip_history] == true do
+      VetCore.Checks.BeamDelta.snapshot(dep.name, dep.version, project_path)
+    end
 
     base_report = %DependencyReport{
       dependency: dep,
