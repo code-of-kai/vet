@@ -107,6 +107,39 @@ defmodule VetCore.Metadata.TyposquatDetector do
     end)
   end
 
+  @doc """
+  Returns the top-packages corpus. Used by PatchOracle to suggest the nearest
+  verified replacement for a phantom or typosquatted package name.
+  """
+  @spec top_packages() :: [atom()]
+  def top_packages, do: @top_packages
+
+  @doc """
+  Returns the closest known package to `name` by Levenshtein distance, or
+  `:none` if nothing is within `max_distance`. Ties break by first match
+  in the corpus order.
+  """
+  @spec nearest_known(atom() | String.t(), pos_integer()) ::
+          {:ok, atom(), non_neg_integer()} | :none
+  def nearest_known(name, max_distance \\ 2) do
+    name_str = to_string(name)
+
+    @top_packages
+    |> Enum.reduce({nil, nil}, fn pkg, {best, best_dist} ->
+      d = levenshtein(name_str, to_string(pkg))
+
+      cond do
+        d > max_distance -> {best, best_dist}
+        is_nil(best_dist) or d < best_dist -> {pkg, d}
+        true -> {best, best_dist}
+      end
+    end)
+    |> case do
+      {nil, nil} -> :none
+      {pkg, dist} -> {:ok, pkg, dist}
+    end
+  end
+
   def check_dep(dep) do
     dep_str = to_string(dep.name)
 
