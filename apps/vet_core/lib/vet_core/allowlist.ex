@@ -13,13 +13,7 @@ defmodule VetCore.Allowlist do
     {:phoenix, :code_eval, "Template compilation"},
     {:phoenix_live_view, :code_eval, "Template compilation"},
     {:ecto, :code_eval, "Query compilation"},
-    {:ecto_sql, :code_eval, "Query compilation"},
-    {:jason, :code_eval, "JSON codec compilation"},
     {:poison, :code_eval, "JSON codec compilation"},
-    {:nimble_parsec, :code_eval, "Parser generator"},
-    {:plug, :code_eval, "Router compilation"},
-    {:telemetry, :code_eval, "Telemetry compilation"},
-    {:makeup, :code_eval, "Syntax highlighter compilation"},
     {:credo, :code_eval, "Linter config evaluation"},
 
     # Frameworks — env access, file access, obfuscation are normal patterns
@@ -29,7 +23,6 @@ defmodule VetCore.Allowlist do
     {:phoenix, :env_access, "Phoenix configuration reads env vars"},
     {:phoenix, :system_exec, "Phoenix code reloader"},
     {:phoenix, :obfuscation, "Phoenix uses apply/3 for dispatch"},
-    {:bandit, :obfuscation, "Bandit uses apply/3 for handler dispatch"},
 
     # Dev/test tools
     {:credo, :system_exec, "Credo runs git for blame info"},
@@ -44,7 +37,6 @@ defmodule VetCore.Allowlist do
     {:file_system, :env_access, "File watcher backend configuration"},
 
     # Network access
-    {:mix_audit, :network_access, "Fetches security advisories"},
     {:hex, :network_access, "Package manager"},
     {:req, :network_access, "HTTP client library"},
     {:finch, :network_access, "HTTP client library"},
@@ -61,22 +53,12 @@ defmodule VetCore.Allowlist do
     {:ecto, :dos_atom_exhaustion, "Ecto legitimately converts atoms for schema fields"},
 
     # Phoenix 1.7+ ecosystem (default `mix phx.new --database postgres`)
-    {:bandit, :network_access, "HTTP server"},
-    {:bandit, :code_eval, "Plug compilation"},
     {:thousand_island, :network_access, "Bandit's underlying socket layer"},
-    {:phoenix_pubsub, :code_eval, "Tracker compilation"},
-    {:phoenix_pubsub, :obfuscation, "PubSub uses apply/3 for adapter dispatch"},
-    {:phoenix_html, :code_eval, "HEEx template compilation"},
     {:phoenix_live_view, :obfuscation, "LiveView uses apply/3 for component dispatch"},
     {:phoenix_live_view, :compiler_hooks, "LiveView uses @before_compile for views"},
-    {:phoenix_live_view, :env_access, "LiveView reads config at compile time"},
     {:phoenix_live_view, :file_access, "LiveView reads template files at compile time"},
-    {:phoenix_live_dashboard, :code_eval, "Dashboard compiles dynamic pages"},
     {:phoenix_live_dashboard, :obfuscation, "Dashboard uses apply/3 for page dispatch"},
-    {:phoenix_live_dashboard, :network_access, "Dashboard fetches telemetry data"},
-    {:phoenix_live_reload, :system_exec, "Spawns OS file watchers"},
     {:phoenix_live_reload, :file_access, "Watches source files for changes"},
-    {:phoenix_live_reload, :network_access, "WebSocket reload channel"},
     {:phoenix_ecto, :code_eval, "Form integration with Ecto changesets"},
     {:phoenix_template, :code_eval, "Template compilation"},
     {:phoenix_template, :compiler_hooks, "@before_compile for template engines"},
@@ -88,14 +70,11 @@ defmodule VetCore.Allowlist do
     {:myxql, :network_access, "MySQL client"},
     {:myxql, :env_access, "Reads MYSQL_* environment variables"},
     {:db_connection, :obfuscation, "Adapter dispatch via apply/3"},
-    {:db_connection, :compiler_hooks, "@before_compile for adapter integration"},
     {:ecto, :env_access, "Ecto config reads env vars"},
     {:ecto_sql, :system_exec, "Migrations may invoke shell tools"},
     {:ecto_sql, :file_access, "Reads migration files"},
 
     # Telemetry
-    {:telemetry_metrics, :code_eval, "Metric definition compilation"},
-    {:telemetry_poller, :code_eval, "Poller compilation"},
     {:telemetry_poller, :system_exec, "Reads /proc on Linux for VM metrics"},
     {:telemetry_poller, :file_access, "Reads /proc filesystem"},
 
@@ -123,8 +102,6 @@ defmodule VetCore.Allowlist do
 
     # Networking & clustering
     {:dns_cluster, :network_access, "DNS lookups for node discovery"},
-    {:websock_adapter, :network_access, "WebSocket transport adapter"},
-    {:hpax, :code_eval, "HTTP/2 header compression"},
 
     # Crypto / TLS
     {:plug_crypto, :obfuscation, "Uses :crypto for cookie/session encryption"},
@@ -136,7 +113,6 @@ defmodule VetCore.Allowlist do
     # Pools and HTML
     {:nimble_pool, :obfuscation, "Pool dispatch via apply/3"},
     {:floki, :code_eval, "HTML parser compilation"},
-    {:mime, :code_eval, "MIME type table compilation"},
 
     # Test tools
     {:floki, :file_access, "Reads HTML files for parser tests"},

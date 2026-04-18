@@ -4,10 +4,17 @@ defmodule VetReporter.Json do
   alias VetCore.Types.{ScanReport, DependencyReport, Finding, HexMetadata}
 
   def render(%ScanReport{} = report) do
-    report
-    |> serialize()
-    |> Jason.encode!(pretty: true)
-    |> IO.puts()
+    encoded =
+      report
+      |> serialize()
+      |> Jason.encode!(pretty: true)
+
+    # IO.binwrite preserves the raw UTF-8 bytes that Jason emits.
+    # IO.puts re-encodes via Erlang's :latin1 default for non-TTY stdio,
+    # which mangles multi-byte chars (em-dashes, smart quotes) into
+    # `\x{...}` escapes that aren't valid JSON.
+    IO.binwrite(encoded)
+    IO.binwrite("\n")
   end
 
   def encode(%ScanReport{} = report) do

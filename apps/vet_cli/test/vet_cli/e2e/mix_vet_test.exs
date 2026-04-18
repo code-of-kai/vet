@@ -52,9 +52,12 @@ defmodule VetCli.E2E.MixVetTest do
 
   describe "default scan (terminal output)" do
     test "produces terminal output with header and findings", %{project_path: path} do
+      # High threshold so the genuinely-malicious fixture doesn't raise before
+      # we can assert on output. The threshold behavior has dedicated tests
+      # below.
       output =
         capture_io(fn ->
-          Mix.Tasks.Vet.run(["--path", path, "--skip-hex"])
+          Mix.Tasks.Vet.run(["--path", path, "--skip-hex", "--threshold", "200"])
         end)
 
       # Header should be present
@@ -72,7 +75,7 @@ defmodule VetCli.E2E.MixVetTest do
     test "produces valid parseable JSON with dependencies", %{project_path: path} do
       output =
         capture_io(fn ->
-          Mix.Tasks.Vet.run(["--path", path, "--skip-hex", "--format", "json"])
+          Mix.Tasks.Vet.run(["--path", path, "--skip-hex", "--format", "json", "--threshold", "200"])
         end)
 
       assert {:ok, parsed} = Jason.decode(output)

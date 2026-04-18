@@ -52,9 +52,17 @@ defmodule VetCore.Scorer do
 
   # -- Private -----------------------------------------------------------------
 
+  # Per-(file, category) bucketing: ten File.read! calls in one module are one
+  # piece of evidence ("this module does file I/O"), not ten. Score the first
+  # finding in each bucket at full weight; remaining duplicates score as :info.
+  # This applies only to source files — BEAM/cross-file findings use unique
+  # paths (workdir, dep root) so each still scores independently.
   defp score_findings(findings) do
-    Enum.reduce(findings, 0, fn finding, acc ->
-      acc + finding_score(finding)
+    findings
+    |> Enum.group_by(fn f -> {f.file_path, f.category} end)
+    |> Enum.reduce(0, fn {_bucket, group}, acc ->
+      [primary | rest] = Enum.sort_by(group, &finding_score/1, :desc)
+      acc + finding_score(primary) + length(rest)
     end)
   end
 
