@@ -18,7 +18,10 @@ defmodule Mix.Tasks.Vet do
           no_diff: :boolean,
           no_history: :boolean,
           verbose: :boolean,
-          ai: :boolean
+          ai: :boolean,
+          adversarial: :boolean,
+          patches: :boolean,
+          verify_patches: :boolean
         ],
         aliases: [
           p: :path,
@@ -42,7 +45,10 @@ defmodule Mix.Tasks.Vet do
     scan_opts = [
       skip_hex: opts[:skip_hex] || false,
       skip_diff: opts[:no_diff] || false,
-      skip_history: opts[:no_history] || false
+      skip_history: opts[:no_history] || false,
+      adversarial: opts[:adversarial] || false,
+      patches: opts[:patches] || false,
+      verify_patches: opts[:verify_patches] || false
     ]
 
     case VetCore.scan(path, scan_opts) do

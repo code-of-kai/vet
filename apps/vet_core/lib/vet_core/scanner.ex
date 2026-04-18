@@ -239,9 +239,24 @@ defmodule VetCore.Scanner do
 
     combined_findings = combined_findings ++ temporal_findings
 
+    {initial_score, _initial_level} = VetCore.Scorer.score(dep, combined_findings, meta)
+
+    # Adversarial LLM verification (gated). Only runs when requested AND the
+    # dep scored high enough to be worth the 3x API cost. Refuted findings
+    # get demoted one severity tier; confirmed findings get their
+    # evidence_level bumped to :llm_confirmed. Re-score after.
+    adversarial_threshold = opts[:adversarial_threshold] || 30
+
+    combined_findings =
+      if opts[:adversarial] && combined_findings != [] && initial_score >= adversarial_threshold do
+        run_adversarial(dep, combined_findings, meta, project_path, opts)
+      else
+        combined_findings
+      end
+
     {risk_score, risk_level} = VetCore.Scorer.score(dep, combined_findings, meta)
 
-    %DependencyReport{
+    base_report = %DependencyReport{
       dependency: dep,
       findings: combined_findings,
       hex_metadata: meta,
@@ -249,6 +264,43 @@ defmodule VetCore.Scanner do
       risk_level: risk_level,
       version_diff: version_diff_result
     }
+
+    # Patch oracle — gated off by default because :verify? hits hex.pm.
+    # When enabled, emits concrete mix.exs-level suggestions per finding.
+    patches =
+      if opts[:patches] do
+        verify? = Keyword.get(opts, :verify_patches, false)
+        VetCore.PatchOracle.suggest(base_report, verify?: verify?)
+      else
+        []
+      end
+
+    %{base_report | patches: patches}
+  end
+
+  defp run_adversarial(dep, findings, meta, project_path, opts) do
+    stub_report = %DependencyReport{
+      dependency: dep,
+      findings: findings,
+      hex_metadata: meta,
+      risk_score: 0,
+      risk_level: :low
+    }
+
+    review_opts =
+      opts
+      |> Keyword.take([:api_key, :model, :max_tokens])
+      |> Keyword.put(:project_path, project_path)
+
+    case VetCore.LLMReview.review_with_refutation(stub_report, review_opts) do
+      {:ok, %{findings: updated}} ->
+        updated
+
+      {:error, reason} ->
+        Logger.warning("Vet: adversarial review failed for #{dep.name}: #{inspect(reason)} — " <>
+                         "keeping original findings")
+        findings
+    end
   end
 
   defp run_version_diff(dep, meta, project_path) do

@@ -197,7 +197,31 @@ defmodule VetReporter.Integration.SarifIntegrationTest do
     end
   end
 
-  describe "SARIF end-to-end: fixes attachment (default, no patches)" do
+  describe "SARIF end-to-end: fixes attachment with patches enabled" do
+    test "scan with patches:true produces fixes on relevant results", %{project_path: path} do
+      report = scan!(path, patches: true, verify_patches: false)
+      doc = Sarif.build(report)
+      [run] = doc["runs"]
+
+      # Our fixture has compile-time system_exec → remove_dependency patch
+      # → every result on that dep carries a fix (since remove_dependency
+      # is "relevant" to all categories on the same dep).
+      risky_results =
+        Enum.filter(run["results"], fn r -> r["properties"]["dep_name"] == "risky_dep" end)
+
+      assert risky_results != []
+
+      fixes_present = Enum.filter(risky_results, &Map.has_key?(&1, "fixes"))
+      assert length(fixes_present) >= 1
+
+      # Every attached fix has action, rationale, diff.
+      for r <- fixes_present, fix <- r["fixes"] do
+        assert is_binary(fix["description"]["text"])
+        assert is_binary(fix["properties"]["action"])
+        assert is_binary(fix["properties"]["diff"])
+      end
+    end
+
     test "scan without patches:true produces no fixes", %{project_path: path} do
       doc = path |> scan!() |> Sarif.build()
       [run] = doc["runs"]
