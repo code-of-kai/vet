@@ -12,9 +12,9 @@ defmodule VetCore.Checks.EnvAccess do
   @sensitive_patterns ~w(SECRET KEY TOKEN PASSWORD CREDENTIAL AWS_ GITHUB_ DATABASE_URL)
 
   @impl true
-  def run(%{name: dep_name} = _dependency, project_path, state) do
+  def run(%{name: dep_name} = _dependency, project_path, _state) do
     dep_name
-    |> FileHelper.parsed_files(project_path, state)
+    |> FileHelper.read_and_parse(project_path)
     |> Enum.flat_map(fn {file_path, source, ast} ->
       Walker.walk(ast, [&matcher(&1, &2, dep_name, source)], file_path, dep_name)
     end)
@@ -109,11 +109,14 @@ defmodule VetCore.Checks.EnvAccess do
   defp build_finding(description, severity_override, meta, state, dep_name, source) do
     is_ct = FileHelper.compile_time?(state.context_stack)
 
+    # Compile-time alone is not a critical signal — `@port System.get_env("PORT", "4000")`
+    # at module top-level is normal config-loading. Only sensitive var names
+    # (caught by severity_override == :critical) escalate. Reading a non-sensitive
+    # env var at compile time is a warning, same as at runtime.
     severity =
-      cond do
-        severity_override == :critical -> :critical
-        is_ct -> :critical
-        true -> @base_severity
+      case severity_override do
+        :critical -> :critical
+        _ -> @base_severity
       end
 
     line = meta[:line] || 0

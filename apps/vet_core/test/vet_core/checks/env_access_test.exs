@@ -118,4 +118,38 @@ defmodule VetCore.Checks.EnvAccessTest do
 
     assert findings == []
   end
+
+  test "compile-time non-sensitive env read stays :warning (no longer escalates to :critical)",
+       %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule TestMod do
+      @port System.get_env("PORT", "4000")
+      def port, do: @port
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+
+    finding = Enum.find(findings, &(&1.description =~ "PORT"))
+    assert finding, "expected a finding for PORT env var read"
+    assert finding.compile_time? == true
+    assert finding.severity == :warning,
+           "compile-time non-sensitive env access should be :warning, not :critical"
+  end
+
+  test "compile-time sensitive env read remains :critical", %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule TestMod do
+      @secret System.get_env("AWS_SECRET_ACCESS_KEY")
+      def secret, do: @secret
+    end
+    """
+
+    findings = run_check(tmp_dir, source)
+
+    finding = Enum.find(findings, &(&1.description =~ "AWS_SECRET_ACCESS_KEY"))
+    assert finding, "expected a finding for sensitive env var read"
+    assert finding.compile_time? == true
+    assert finding.severity == :critical
+  end
 end

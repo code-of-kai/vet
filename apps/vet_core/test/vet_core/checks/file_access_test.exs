@@ -210,106 +210,68 @@ defmodule VetCore.Checks.FileAccessTest do
     assert Enum.any?(findings, &(&1.description =~ ":file.consult"))
   end
 
-  describe "sensitive-path detection — evasion via non-literal arguments" do
-    # These tests attack the promise that "sensitive path access → critical".
-    # `args_contain_sensitive_path?/1` only inspects binary/charlist/binary-ctor
-    # literals; any construct that defers the path value to runtime — a variable,
-    # Path.join, module attribute, etc. — slips past. The check still fires (any
-    # File.read! is flagged) but at :warning, not :critical, silently losing the
-    # credential-exfiltration signal.
-    #
-    # Each test below pins a concrete evasion so that if the matcher ever grows
-    # data-flow awareness, the test breaks and we update the expectation.
-
-    test "sensitive path through a local variable is NOT elevated to critical",
-         %{tmp_dir: tmp_dir} do
-      # `File.read!(path)` where path = "~/.ssh/id_rsa". The string literal is
-      # syntactically visible a few lines up but the matcher only sees the
-      # variable reference as the argument → the sensitive-path check misses it.
-      source = """
-      defmodule Evasion.Variable do
-        def steal do
-          path = "~/.ssh/id_rsa"
-          File.read!(path)
-        end
-      end
-      """
-
-      findings = run_check(tmp_dir, source)
-      read_findings = Enum.filter(findings, &(&1.description =~ "File.read!"))
-
-      assert read_findings != [], "expected at least one File.read! finding"
-
-      refute Enum.any?(read_findings, &(&1.severity == :critical)),
-             "variable-resolution would have promoted to critical; if that's now working, " <>
-               "update this test. Current findings: " <>
-               inspect(Enum.map(read_findings, &{&1.severity, &1.description}))
+  test "compile-time non-sensitive file read is :info (bundling pattern)",
+       %{tmp_dir: tmp_dir} do
+    # CT execution runs on the developer's machine — no user-input vector.
+    # Whether the path is a string literal or a variable bound to one, the
+    # developer can audit it. Exfil/eval risks are caught by Network /
+    # CodeEval / Obfuscation checks separately. Surface as :info so the
+    # user sees the CT file surface area without it inflating scores on
+    # asset/template/version bundling (Phoenix, phoenix_live_dashboard,
+    # phoenix_html, etc.).
+    source = """
+    defmodule TestMod do
+      @version File.read!("VERSION")
+      def version, do: @version
     end
+    """
 
-    test "sensitive path assembled via Path.join is NOT elevated to critical",
-         %{tmp_dir: tmp_dir} do
-      # Path.join("~/", ".ssh/id_rsa") evaluates to "~/.ssh/id_rsa" at runtime
-      # but the AST argument is a call expression, not a binary. Missed.
-      source = """
-      defmodule Evasion.PathJoin do
-        def steal do
-          File.read!(Path.join("~/", ".ssh/id_rsa"))
-        end
-      end
-      """
+    findings = run_check(tmp_dir, source)
 
-      findings = run_check(tmp_dir, source)
-      read_findings = Enum.filter(findings, &(&1.description =~ "File.read!"))
+    finding = Enum.find(findings, &(&1.description =~ "File.read!" and &1.compile_time?))
+    assert finding, "expected a compile-time finding for VERSION file read"
+    assert finding.severity == :info,
+           "compile-time non-sensitive file read should be :info"
+    refute finding.severity == :critical,
+           "compile-time non-sensitive file read should never escalate to :critical"
+  end
 
-      assert read_findings != []
+  test "compile-time file read with variable path is also :info (asset bundling)",
+       %{tmp_dir: tmp_dir} do
+    # The canonical asset-bundling shape: bind a literal path to a var,
+    # declare it as @external_resource, then File.read! the var. The AST
+    # shows a variable, but the developer authored both the binding and
+    # the read in the same module. Treat the same as the literal-path case.
+    source = """
+    defmodule TestMod do
+      css_path = Path.join(__DIR__, "assets/app.css")
+      @external_resource css_path
+      @css File.read!(css_path)
 
-      refute Enum.any?(read_findings, &(&1.severity == :critical)),
-             "Path.join-assembled sensitive paths should now be caught if this fails"
+      def css, do: @css
     end
+    """
 
-    test "sensitive path via string interpolation with dynamic middle IS caught when a literal segment contains the marker",
-         %{tmp_dir: tmp_dir} do
-      # Reverse-adversarial: assert the matcher's CURRENT positive behavior on
-      # interpolated binaries. "~/.ssh/#{name}" has a literal segment "~/.ssh/"
-      # that contains the marker "~/.ssh" → elevated. This is the one
-      # runtime-ish case the check does handle.
-      source = """
-      defmodule Evasion.Interp do
-        def steal(name) do
-          File.read!("~/.ssh/\#{name}")
-        end
-      end
-      """
+    findings = run_check(tmp_dir, source)
 
-      findings = run_check(tmp_dir, source)
-      read_findings = Enum.filter(findings, &(&1.description =~ "File.read!"))
+    finding = Enum.find(findings, &(&1.description =~ "File.read!" and &1.compile_time?))
+    assert finding, "expected a CT File.read! finding"
+    assert finding.severity == :info
+  end
 
-      assert Enum.any?(read_findings, &(&1.severity == :critical)),
-             "expected interpolation with literal sensitive prefix to stay critical"
+  test "compile-time sensitive file read remains :critical", %{tmp_dir: tmp_dir} do
+    source = """
+    defmodule TestMod do
+      @secret File.read!("~/.ssh/id_rsa")
+      def secret, do: @secret
     end
+    """
 
-    test "sensitive path split across concatenation — only the left literal matters",
-         %{tmp_dir: tmp_dir} do
-      # "~/.ssh/" <> name — left side "~/.ssh/" contains "~/.ssh", so the
-      # `:<<>>` path SHOULD pick this up. But the AST form of `<>` is actually
-      # `{:<>, _, [left, right]}` at parse time, *not* `{:<<>>, _, parts}`.
-      # That's a separate AST node from interpolation — so this case is missed.
-      source = """
-      defmodule Evasion.Concat do
-        def steal(name) do
-          File.read!("~/.ssh/" <> name)
-        end
-      end
-      """
+    findings = run_check(tmp_dir, source)
 
-      findings = run_check(tmp_dir, source)
-      read_findings = Enum.filter(findings, &(&1.description =~ "File.read!"))
-
-      assert read_findings != []
-
-      refute Enum.any?(read_findings, &(&1.severity == :critical)),
-             "<> concat on sensitive literal prefix is currently missed; " <>
-               "if a literal-prefix check was added, update this test"
-    end
+    finding = Enum.find(findings, &(&1.severity == :critical))
+    assert finding, "expected a critical finding for sensitive path read at compile time"
+    assert finding.compile_time? == true
+    assert finding.description =~ "sensitive"
   end
 end

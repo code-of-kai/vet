@@ -51,7 +51,9 @@ defmodule VetCore.Checks.ShadyLinks do
     source
     |> String.split("\n")
     |> Enum.with_index(1)
-    |> Enum.reject(fn {line_text, _idx} -> comment_line?(line_text) end)
+    |> Enum.reject(fn {line_text, _idx} ->
+      comment_line?(line_text) or pattern_definition_line?(line_text)
+    end)
     |> Enum.flat_map(fn {line_text, line_number} ->
       Enum.flat_map(patterns(), fn {regex, description} ->
         if Regex.match?(regex, line_text) do
@@ -78,6 +80,14 @@ defmodule VetCore.Checks.ShadyLinks do
     line
     |> String.trim_leading()
     |> String.starts_with?("#")
+  end
+
+  # Lines like `{~r/ngrok\.io/, "..."}` are pattern definitions inside
+  # security-scanning code (vet_core, sobelow, etc.), not endpoints that get
+  # requested. Skip them — the regex is matching the scanner's own signature
+  # database, not malicious behavior.
+  defp pattern_definition_line?(line) do
+    String.contains?(line, "~r/") or String.contains?(line, "~R/")
   end
 
   defp in_test_directory?(path) do
