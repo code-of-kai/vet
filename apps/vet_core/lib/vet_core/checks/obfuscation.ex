@@ -13,9 +13,9 @@ defmodule VetCore.Checks.Obfuscation do
   @min_string_length 40
 
   @impl true
-  def run(%{name: dep_name} = _dependency, project_path, _state) do
+  def run(%{name: dep_name} = _dependency, project_path, state) do
     dep_name
-    |> FileHelper.read_and_parse(project_path)
+    |> FileHelper.parsed_files(project_path, state)
     |> Enum.flat_map(fn {file_path, source, ast} ->
       findings_decode_eval = scan_decode_eval(ast, dep_name, file_path, source)
 

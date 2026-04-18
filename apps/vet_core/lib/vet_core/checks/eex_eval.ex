@@ -29,9 +29,9 @@ defmodule VetCore.Checks.EExEval do
   }
 
   @impl true
-  def run(%{name: dep_name} = _dependency, project_path, _state) do
+  def run(%{name: dep_name} = _dependency, project_path, state) do
     dep_name
-    |> FileHelper.read_and_parse(project_path)
+    |> FileHelper.parsed_files(project_path, state)
     |> Enum.flat_map(fn {file_path, source, ast} ->
       Walker.walk(ast, [&matcher(&1, &2, dep_name, source)], file_path, dep_name)
     end)

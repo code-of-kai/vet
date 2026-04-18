@@ -195,10 +195,16 @@ defmodule VetCore.Scanner do
   end
 
   defp run_checks_for_dep(dep, project_path, hex_metadata, opts) do
+    # Parse once per dep (clearwing read-once optimization) and share the
+    # result with every check. Previously each of the 9 checks re-read and
+    # re-parsed the entire dep independently — 9x redundant I/O per dep.
+    parsed_files = VetCore.Checks.FileHelper.read_and_parse(dep.name, project_path)
+    state = [parsed_files: parsed_files]
+
     all_findings =
       @checks
       |> Enum.flat_map(fn check_mod ->
-        check_mod.run(dep, project_path, [])
+        check_mod.run(dep, project_path, state)
       end)
       |> correlate_findings()
 
