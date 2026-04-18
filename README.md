@@ -67,7 +67,7 @@ Use `--no-diff` to disable version diffing for faster offline scans.
 
 ## What it checks
 
-Vet runs 10 checks against each dependency's source code via AST analysis:
+Vet runs 10 source-level checks against each dependency's AST:
 
 | Check | Category | What it detects |
 |---|---|---|
@@ -83,6 +83,39 @@ Vet runs 10 checks against each dependency's source code via AST analysis:
 | `AtomExhaustion` | `:dos_atom_exhaustion` | `String.to_atom`, `:erlang.binary_to_atom` — DoS via atom table exhaustion |
 
 Every finding distinguishes between compile-time and runtime context. Compile-time findings score significantly higher because they execute during `mix deps.compile` — before your application code runs.
+
+## Defense in depth: seven layers beyond AST
+
+Source-level scanning has known evasion paths: `defdelegate`, atom-aliased module names, macro-synthesized calls, `.erl` files compiled to BEAM, `$handle_undefined_function/2`, NIFs, and dynamic dispatch. Vet does not pretend these don't exist — instead it stacks six additional inspection layers, each of which catches a different evasion class. An attacker has to defeat *all* of them, not just AST analysis.
+
+| Layer | Where it operates | What it defeats |
+|---|---|---|
+| **1. BEAM imports** (`Checks.BeamImports`) | `:beam_lib` chunks of compiled `.beam` files | Source-level evasion via `defdelegate`, atom aliasing, macro synthesis, `.erl` files. The BEAM has the literal call wired in regardless of how the source spelled it. |
+| **2. Compile sandbox** (`Checks.SandboxedCompile`) | OS-level sandbox (`sandbox-exec` on macOS, `bwrap` on Linux) | Compile-time escape. Runs `mix deps.compile <pkg>` inside a denylist sandbox; reports denied syscalls, network attempts, subprocess spawns, writes outside the workdir. Opt-in via `sandboxed_compile: true`. |
+| **3. Reflection tripwires** (`Checks.BeamReflection`) | BEAM imports + dynamic-dispatch opcode counts | `apply/3`, `String.to_atom`, `binary_to_term` + dispatch combinations, `$handle_undefined_function/2` exports. Counts dispatch opcodes per module, not source occurrences. |
+| **4. Version delta** (`Checks.BeamDelta` + `BEAM.BeamDiff` + `BEAM.ProfileCache`) | Cached prior BEAM profile vs current | Gradual introduction. Diffs the current compiled profile against a cached snapshot of the prior version; flags new dangerous imports, new `$handle_undefined`, dispatch spikes (default threshold: +3), suspicious atoms (URLs/IPs/hostnames). |
+| **5. Native code surface** (`Checks.NativeCode`) | `priv/*.so/.dylib/.dll`, `c_src/`, `Cargo.toml`, `:rustler`/`:elixir_make` in mix.exs, `:erlang.load_nif/2` in BEAMs | NIF bypass. Native code is opaque machine running in the BEAM scheduler — Vet can't analyze it, but it can detect its presence. |
+| **6. Attestation** (`Checks.Attestation` + `Attestation.{Manifest, Signer, Verifier, Store}`) | Ed25519-signed `*.manifest.json` + `*.sig` in `.vet/attestations/`, trusted keys in `.vet/trusted_keys/` or `~/.vet/trusted_keys/` | Tampered installs and untrusted publishers. Verifies the signature was produced by a trusted key and that every module hash in the manifest matches the local install byte-for-byte. Modes: `:advisory` (default), `:require` (warning for unsigned), `:strict` (critical for unsigned). |
+| **7. Capability verifier** (`Checks.CapabilityVerifier`) | `:vet_capabilities` list declared in dep's `mix.exs` vs MFAs observed in compiled BEAMs | Undeclared capability expansion. A package that promises `[:network]` but ships `:ssh` calls in its BEAM emits a critical `:capability_undeclared_use` finding. |
+
+These layers don't replace AST scanning — they augment it. Most malicious patterns surface in source. The seven layers exist to close the doors that source analysis alone leaves open.
+
+### Threat model — what each evasion costs the attacker
+
+| Hypothetical evasion | Layer that catches it | What the attacker has to do instead |
+|---|---|---|
+| `defdelegate` to obfuscate target module | Layer 1 (imports table) | Avoid the imports chunk entirely — only possible via NIF, caught by Layer 5 |
+| Atom-aliased module reference (`mod = :"Sys" <> "tem"; mod.cmd("...")`) | Layer 3 (dispatch + reflection counts) | Drop reflection altogether |
+| Macro that emits dangerous calls at compile time | Layer 1 (the macro expansion ends up in the BEAM) | Hide call inside a NIF — Layer 5 |
+| `.erl` source file (skipped by Elixir AST walker) | Layer 1 (compiled identically to `.ex`) | Same answer |
+| `$handle_undefined_function/2` for runtime resolution | Layer 1 + Layer 3 (export-table check) | Removing the export defeats the technique |
+| Compile-time `System.cmd("curl ...")` | Layer 2 (sandbox blocks subprocess + network) | The compile fails inside the sandbox |
+| Gradual ratchet: introduce one dangerous import per release | Layer 4 (delta against cached prior version) | Each step still produces a delta finding |
+| Pure NIF payload | Layer 5 detects the artifact, mix.exs `compilers`, or `:erlang.load_nif/2` import | Strip every native file/build directive — at which point there's no NIF |
+| Repackaged tarball with extra modules | Layer 6 (manifest hashes diverge from install) | Compromise a trusted key |
+| Add `:ssh` calls to a "pure compute" library | Layer 7 (`:vet_capabilities` mismatch) | Update mix.exs declarations, which is itself a visible signal |
+
+No single layer is a silver bullet. Together, they push the cost of a successful supply-chain attack from "spell the call differently" up to "compromise the publisher's signing key, evade the sandbox, and avoid every BEAM-level signal across the entire delta."
 
 ## Scoring
 
@@ -144,7 +177,12 @@ Vet is structured as an umbrella project:
 
   * **Vet reduces risk. It does not eliminate it.** A clean scan is not proof of safety. Do not use Vet as the sole basis for trusting a dependency.
   * Elixir/Erlang only. Does not scan npm, Python, or other ecosystems.
-  * Static analysis. Cannot detect malicious behavior hidden behind runtime conditionals, encrypted payloads decrypted at a later stage, or code loaded dynamically from external sources.
+  * **Native code is opaque.** Layer 5 detects the *presence* of NIFs and native build systems but cannot analyze the machine code they ship. A NIF that exfiltrates secrets is invisible to every layer except presence detection.
+  * **Layer 4 needs a baseline.** The delta check requires a cached prior profile in `.vet/beam_profiles/`. The first scan of a new dependency has nothing to diff against — the second scan is when delta findings become useful.
+  * **Layer 6 is opt-in for the ecosystem.** Most Hex packages are not signed. Attestation is most valuable for inner-source / vendored / private-registry packages where you control the signing.
+  * **Layer 2 is opt-in.** The sandbox is gated behind `sandboxed_compile: true` because running every dep's compile inside `sandbox-exec` / `bwrap` materially slows scans and depends on the host OS shipping the right tool.
+  * **Layer 7 detects undeclared capabilities, not malicious ones.** A package can declare `[:network, :system_exec, :code_eval]` and Vet will not flag it — the value is in the surprise. Diff against the prior declaration to spot expanding scope.
+  * Static analysis. Cannot detect malicious behavior hidden behind runtime conditionals, encrypted payloads decrypted at a later stage, or code loaded dynamically from external sources beyond what Layer 4's delta surfaces.
   * The typosquat corpus is a static list of ~200 popular packages. Packages outside this list will not trigger proximity checks.
   * Metadata checks require network access to hex.pm. Use `--skip-hex` when running offline.
   * Vet trusts hex.pm API responses. If hex.pm itself is compromised, metadata-based checks become unreliable.
