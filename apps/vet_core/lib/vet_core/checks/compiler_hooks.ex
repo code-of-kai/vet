@@ -209,13 +209,17 @@ defmodule VetCore.Checks.CompilerHooks do
 
           {node, [finding | acc]}
 
-        # `compilers: [...]` in a project keyword list.
-        {:compilers, meta, [[_ | _] = _compilers]} = node, acc ->
+        # `compilers: [...]` inside a `def project` keyword list.
+        # Macro.traverse visits keyword entries as 2-tuples `{:compilers, [...]}`,
+        # NOT as 3-tuple function-call nodes. An earlier version matched a
+        # 3-tuple pattern and never fired — see commit 2e4507e.
+        # Keyword entries carry no meta, so the line is 0.
+        {:compilers, [_ | _] = _compilers} = node, acc ->
           finding =
             build_finding(
               "Custom compilers defined in mix.exs — may execute arbitrary code during compilation",
               :critical,
-              meta,
+              [],
               dep_name,
               file_path,
               source

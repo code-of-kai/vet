@@ -70,12 +70,15 @@ defmodule VetCore.Integration.ScorerIntegrationTest do
     test "score is capped at 100" do
       dep = %Dependency{name: :terrible_pkg, version: "0.0.1", source: {:git, "https://evil.com/repo"}}
 
-      # Generate enough findings to push score well over 100
+      # Generate enough findings across distinct (file, category) buckets to
+      # push the score well over 100. Per-(file,category) bucketing means ten
+      # System.cmd calls in one module only score as one piece of evidence —
+      # so the fixture needs ten DIFFERENT modules.
       findings =
         for i <- 1..10 do
           %Finding{
             dep_name: :terrible_pkg,
-            file_path: "lib/bad.ex",
+            file_path: "lib/bad_#{i}.ex",
             line: i,
             check_id: :system_exec,
             category: :system_exec,
