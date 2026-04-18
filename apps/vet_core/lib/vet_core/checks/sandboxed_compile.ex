@@ -95,6 +95,7 @@ defmodule VetCore.Checks.SandboxedCompile do
         category: @category,
         severity: :critical,
         compile_time?: true,
+        evidence_level: :sandbox_observed,
         description:
           "Sandboxed compile of #{dep_name} attempted a denied operation: " <>
             "#{denial.op} #{denial.target || ""} — " <>
@@ -115,6 +116,7 @@ defmodule VetCore.Checks.SandboxedCompile do
         category: @category,
         severity: :critical,
         compile_time?: true,
+        evidence_level: :sandbox_observed,
         description:
           "Sandboxed compile of #{dep_name} attempted a network connection to " <>
             "#{host}:#{port} — compile phase should not need the network"
@@ -134,6 +136,7 @@ defmodule VetCore.Checks.SandboxedCompile do
         category: @category,
         severity: :warning,
         compile_time?: true,
+        evidence_level: :sandbox_observed,
         description:
           "Sandboxed compile of #{dep_name} spawned subprocess: #{exe}"
       }
@@ -156,6 +159,7 @@ defmodule VetCore.Checks.SandboxedCompile do
         category: @category,
         severity: :critical,
         compile_time?: true,
+        evidence_level: :sandbox_observed,
         description:
           "Sandboxed compile of #{dep_name} wrote outside the workdir: #{path}"
       }

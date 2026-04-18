@@ -323,6 +323,10 @@ defmodule VetCore.Scanner do
 
     combined_findings = combined_findings ++ temporal_findings
 
+    # Promote findings to :known_incident when the dep matches a public
+    # advisory entry in the corpus. Top rung of the evidence ladder.
+    combined_findings = VetCore.IncidentCorpus.promote(dep, combined_findings)
+
     {initial_score, _initial_level} = VetCore.Scorer.score(dep, combined_findings, meta)
 
     # Adversarial LLM verification (gated). Only runs when requested AND the

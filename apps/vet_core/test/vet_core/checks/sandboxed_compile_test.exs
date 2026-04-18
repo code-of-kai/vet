@@ -134,5 +134,25 @@ defmodule VetCore.Checks.SandboxedCompileTest do
 
       assert SandboxedCompile.report_to_findings(report, :test_dep) == []
     end
+
+    test "all findings carry evidence_level :sandbox_observed" do
+      report = %BehaviorReport{
+        backend: :sandbox_exec,
+        command: ["mix"],
+        workdir: "/tmp/wd",
+        exit_status: 1,
+        duration_ms: 10,
+        sandbox_available?: true,
+        denied_operations: [%{op: "file-write-create", target: "/etc/passwd", raw: "..."}],
+        network_attempts: [{"attacker.example", 443}],
+        processes_spawned: ["/bin/sh"],
+        files_written: ["/outside/workdir/file"]
+      }
+
+      findings = SandboxedCompile.report_to_findings(report, :test_dep)
+
+      assert length(findings) == 4
+      assert Enum.all?(findings, &(&1.evidence_level == :sandbox_observed))
+    end
   end
 end
