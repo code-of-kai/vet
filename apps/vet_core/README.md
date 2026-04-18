@@ -1,21 +1,16 @@
-# VetCore
+# vet_core
 
-**TODO: Add description**
+Scanner core for [Vet](https://github.com/code-of-kai/vet), a static-analysis security scanner for Elixir dependencies. Walks the AST of every dependency in your lock file and flags supply-chain attack indicators.
 
-## Installation
+Most users should depend on [`vet_cli`](https://hex.pm/packages/vet_cli) instead, which provides the `mix vet` and `mix vet.check` tasks.
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `vet_core` to your list of dependencies in `mix.exs`:
+## Direct API
 
 ```elixir
-def deps do
-  [
-    {:vet_core, "~> 0.1.0"}
-  ]
-end
+VetCore.scan(project_path, opts)
+VetCore.PreInstallCheck.check_package(:some_package)
+VetCore.PreInstallCheck.check_deps(project_path)
+VetCore.VersionDiff.diff(path, :pkg, "1.0.0", "1.1.0")
 ```
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/vet_core>.
-
+See the [main README](https://github.com/code-of-kai/vet) for full documentation.

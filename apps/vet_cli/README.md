@@ -1,21 +1,22 @@
-# VetCli
+# vet_cli
 
-**TODO: Add description**
+Mix tasks for [Vet](https://github.com/code-of-kai/vet), a static-analysis security scanner for Elixir dependencies.
 
 ## Installation
-
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `vet_cli` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
   [
-    {:vet_cli, "~> 0.1.0"}
+    {:vet_cli, "~> 0.1", only: :dev, runtime: false}
   ]
 end
 ```
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/vet_cli>.
+## Usage
 
+```bash
+mix vet         # full dependency scan
+mix vet.check   # pre-install check (reads mix.exs)
+```
+
+See the [main README](https://github.com/code-of-kai/vet) for full documentation.

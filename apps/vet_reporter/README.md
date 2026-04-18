@@ -1,21 +1,7 @@
-# VetReporter
+# vet_reporter
 
-**TODO: Add description**
+Output formatters (terminal, JSON, diagnostics) for [Vet](https://github.com/code-of-kai/vet), a static-analysis security scanner for Elixir dependencies.
 
-## Installation
+This package is a transitive dependency of [`vet_cli`](https://hex.pm/packages/vet_cli) — most users should depend on `vet_cli` directly.
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `vet_reporter` to your list of dependencies in `mix.exs`:
-
-```elixir
-def deps do
-  [
-    {:vet_reporter, "~> 0.1.0"}
-  ]
-end
-```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/vet_reporter>.
-
+See the [main README](https://github.com/code-of-kai/vet) for full documentation.
