@@ -11,6 +11,10 @@ defmodule VetReporter do
     VetReporter.Json.render(scan_report)
   end
 
+  def report(scan_report, :sarif) do
+    VetReporter.Sarif.render(scan_report)
+  end
+
   def report(scan_report, :diagnostics) do
     VetReporter.Diagnostics.render(scan_report)
   end

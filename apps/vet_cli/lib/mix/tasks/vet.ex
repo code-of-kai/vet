@@ -33,6 +33,7 @@ defmodule Mix.Tasks.Vet do
     format =
       case opts[:format] do
         "json" -> :json
+        "sarif" -> :sarif
         "diagnostics" -> :diagnostics
         _ -> :terminal
       end

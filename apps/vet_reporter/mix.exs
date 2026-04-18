@@ -29,7 +29,8 @@ defmodule VetReporter.MixProject do
 
   defp deps do
     [
-      {:vet_core, vet_core_dep()}
+      {:vet_core, vet_core_dep()},
+      {:stream_data, "~> 1.1", only: :test}
     ]
   end
 
